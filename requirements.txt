@@ -1,0 +1,9 @@
+playwright==1.55.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+pytest==7.4.4
+pytest-cov==4.1.0
+fastapi==0.115.2
+uvicorn[standard]==0.30.6
+aiofiles==23.2.1
+
