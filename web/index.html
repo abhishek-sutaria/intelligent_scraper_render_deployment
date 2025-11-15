@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scholar Paper Scraper</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Google Scholar Scraper</h1>
+        <p>
+          Paste a public Google Scholar profile link, choose how many papers you want,
+          and we will collect them into an interactive checklist.
+        </p>
+      </header>
+
+      <form id="scrape-form" class="card">
+        <label for="profile-url">Scholar Profile URL</label>
+        <input
+          id="profile-url"
+          type="url"
+          name="profileUrl"
+          placeholder="https://scholar.google.com/citations?user=XXXX&hl=en"
+          required
+        />
+
+        <label for="max-papers">Number of Papers</label>
+        <input
+          id="max-papers"
+          type="number"
+          name="maxPapers"
+          min="1"
+          max="1000"
+          value="50"
+          required
+        />
+
+        <button type="submit">Start Scraping</button>
+      </form>
+
+      <section id="status-card" class="card hidden">
+        <h2>Status</h2>
+        <div class="progress-wrapper">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <p id="status-text">Waiting to start…</p>
+        <p id="stage-text" class="stage-text"></p>
+      </section>
+
+      <section id="result-card" class="card hidden">
+        <h2>Result</h2>
+        <p id="result-summary"></p>
+        <div class="actions">
+          <a id="html-link" class="btn" href="#" target="_blank" rel="noopener">Open Checklist</a>
+          <a id="debug-link" class="btn secondary" href="#" target="_blank" rel="noopener">Download Debug Report</a>
+        </div>
+      </section>
+
+      <footer>
+        <small>
+          Playwright must be installed on the server. Respect Google Scholar's rate limits and terms of service.
+        </small>
+      </footer>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+
