@@ -128,7 +128,13 @@ class GoogleScholarScraper:
             if platform.system() == 'Darwin':
                 launch_options['args'] = ['--no-sandbox', '--disable-setuid-sandbox']
             
-            browser = await p.chromium.launch(**launch_options)
+            # Use chromium_headless_shell for serverless environments (like Render)
+            # Falls back to regular chromium for local development
+            try:
+                browser = await p.chromium_headless_shell.launch(**launch_options)
+            except Exception:
+                # Fallback to regular chromium if headless-shell is not available
+                browser = await p.chromium.launch(**launch_options)
             
             # Create context with realistic user agent
             context = await browser.new_context(
@@ -792,7 +798,7 @@ class GoogleScholarScraper:
                                                 citation_match = re.search(r'(\d+)', link_text_clean)
                                                 if citation_match:
                                                     citations = citation_match.group(1)
-                                                    break
+                                break
                                     except:
                                         continue
                             except:
