@@ -131,10 +131,18 @@ class GoogleScholarScraper:
             # Use chromium_headless_shell for serverless environments (like Render)
             # Falls back to regular chromium for local development
             try:
+                self._log("Attempting to launch chromium-headless-shell...", "DEBUG")
                 browser = await p.chromium_headless_shell.launch(**launch_options)
-            except Exception:
+                self._log("Successfully launched chromium-headless-shell", "SUCCESS")
+            except Exception as e:
                 # Fallback to regular chromium if headless-shell is not available
-                browser = await p.chromium.launch(**launch_options)
+                self._log(f"chromium-headless-shell failed: {str(e)}, trying full chromium...", "WARNING")
+                try:
+                    browser = await p.chromium.launch(**launch_options)
+                    self._log("Successfully launched full chromium", "SUCCESS")
+                except Exception as e2:
+                    self._log(f"Both browser types failed. chromium-headless-shell: {str(e)}, chromium: {str(e2)}", "ERROR")
+                    raise
             
             # Create context with realistic user agent
             context = await browser.new_context(
