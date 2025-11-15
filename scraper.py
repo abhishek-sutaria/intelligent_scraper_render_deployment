@@ -798,7 +798,7 @@ class GoogleScholarScraper:
                                                 citation_match = re.search(r'(\d+)', link_text_clean)
                                                 if citation_match:
                                                     citations = citation_match.group(1)
-                                break
+                                                    break
                                     except:
                                         continue
                             except:
