@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import traceback
 import urllib.parse
 import uuid
@@ -15,6 +16,23 @@ from pydantic import BaseModel, Field, HttpUrl
 from extractor import PaperExtractor
 from html_generator import HTMLGenerator
 from scraper import GoogleScholarScraper
+
+# Verify Playwright browsers are available at startup
+PLAYWRIGHT_PATH = os.getenv('PLAYWRIGHT_BROWSERS_PATH', '')
+if PLAYWRIGHT_PATH:
+    browser_path = Path(PLAYWRIGHT_PATH)
+    if not browser_path.exists():
+        print(f"WARNING: PLAYWRIGHT_BROWSERS_PATH {PLAYWRIGHT_PATH} does not exist!")
+    else:
+        print(f"✓ Playwright browsers path verified: {PLAYWRIGHT_PATH}")
+        # List what's in the directory for debugging
+        try:
+            contents = list(browser_path.iterdir())
+            print(f"  Found {len(contents)} items in browser directory")
+        except Exception as e:
+            print(f"  Could not list directory contents: {e}")
+else:
+    print("INFO: PLAYWRIGHT_BROWSERS_PATH not set, using default Playwright cache location")
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
