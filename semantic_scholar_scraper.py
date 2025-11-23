@@ -427,7 +427,7 @@ class SemanticScholarScraper:
                     dropdowns = await page.query_selector_all(selector)
                     for dropdown in dropdowns[:2]:  # Max 2 per selector type
                         if clicked_count >= 3:
-                break
+                            break
                         try:
                             # Check if dropdown is visible and clickable
                             is_visible = await dropdown.is_visible()
@@ -1142,7 +1142,7 @@ class SemanticScholarScraper:
                 if doi_pdf:
                     print(f"[PDF Extraction] ✅ Found PDF via DOI: {doi_pdf[:60]}...")
                     download_link = doi_pdf
-                self.stats["download_links_found"] += 1
+                    self.stats["download_links_found"] += 1
                 else:
                     print(f"[PDF Extraction] ❌ No PDF found via DOI for {paper_id}")
             
