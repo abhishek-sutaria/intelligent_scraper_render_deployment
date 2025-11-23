@@ -427,7 +427,7 @@ class SemanticScholarScraper:
                     dropdowns = await page.query_selector_all(selector)
                     for dropdown in dropdowns[:2]:  # Max 2 per selector type
                         if clicked_count >= 3:
-                            break
+                break
                         try:
                             # Check if dropdown is visible and clickable
                             is_visible = await dropdown.is_visible()
@@ -565,214 +565,208 @@ class SemanticScholarScraper:
         if PLAYWRIGHT_AVAILABLE:
             print(f"[PDF Extraction] 🚀 Starting Playwright browser for {paper_id}")
             try:
-                # Use context manager approach (recommended by Playwright)
-                async with async_playwright() as playwright:
-                    browser = await playwright.chromium.launch(
+                # Add overall timeout to prevent hanging (30 seconds max)
+                return await asyncio.wait_for(
+                    self._scrape_with_playwright(paper_id, paper_url),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                print(f"[PDF Extraction] ⏱️  Timeout after 30s for {paper_id}, skipping Playwright")
+                return ""
+            except Exception as exc:
+                print(f"[PDF Extraction] ❌ Error in Playwright scraping for {paper_id}: {exc}")
+                return ""
+        
+        # Fallback: return empty string (will use Semantic Scholar page link)
+        print(f"[PDF Extraction] ⚠️  Playwright not available or failed, returning empty for {paper_id}")
+        return ""
+    
+    async def _scrape_with_playwright(self, paper_id: str, paper_url: str) -> str:
+        """Internal method to handle Playwright scraping with proper cleanup and timeouts."""
+        browser = None
+        try:
+            # Use context manager approach (recommended by Playwright)
+            async with async_playwright() as playwright:
+                browser = await asyncio.wait_for(
+                    playwright.chromium.launch(
                         headless=True,
                         args=[
                             '--disable-blink-features=AutomationControlled',
                             '--disable-dev-shm-usage',
                             '--no-sandbox',
-                        ]
+                        ],
+                        timeout=10000,  # 10 second timeout for browser launch
+                    ),
+                    timeout=12.0
+                )
+                
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                page = await context.new_page()
+                
+                # Remove webdriver detection
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
+                
+                # Navigate with timeout
+                try:
+                    response = await asyncio.wait_for(
+                        page.goto(paper_url, wait_until="load", timeout=20000),
+                        timeout=25.0
+                    )
+                    if not response or response.status >= 400:
+                        print(f"[PDF Extraction] Page returned status {response.status if response else 'None'} for {paper_id}")
+                        return ""
+                except asyncio.TimeoutError:
+                    print(f"[PDF Extraction] Navigation timeout for {paper_id}")
+                    return ""
+                except Exception as nav_exc:
+                    print(f"[PDF Extraction] Navigation error for {paper_id}: {nav_exc}")
+                    return ""
+                
+                # Wait for page (with timeout)
+                try:
+                    await asyncio.wait_for(
+                        page.wait_for_load_state("domcontentloaded", timeout=10000),
+                        timeout=12.0
+                    )
+                    await asyncio.sleep(2)  # Additional wait for JavaScript
+                except asyncio.TimeoutError:
+                    print(f"[PDF Extraction] Page load timeout for {paper_id}, continuing anyway")
+                except Exception:
+                    pass
+                
+                # Extract PDF links (with timeout)
+                try:
+                    found_links = await asyncio.wait_for(
+                        self._extract_all_pdf_links_simple(page, paper_id),
+                        timeout=15.0
                     )
                     
-                    context = await browser.new_context(
-                        viewport={'width': 1920, 'height': 1080},
-                        user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    )
-                    page = await context.new_page()
-                    
-                    # Remove webdriver detection
-                    await page.add_init_script("""
-                        Object.defineProperty(navigator, 'webdriver', {
-                            get: () => undefined
-                        });
-                    """)
-                    
-                    # Navigate to the page with better error handling
-                    try:
-                        # Use 'load' which is less strict than networkidle
-                        response = await page.goto(paper_url, wait_until="load", timeout=30000)
-                        if not response or response.status >= 400:
-                            if self.verbose:
-                                self._log(f"Page returned status {response.status if response else 'None'} for {paper_id}", "DEBUG")
-                            return ""
-                    except Exception as nav_exc:
-                        if self.verbose:
-                            self._log(f"Navigation error for {paper_id}: {nav_exc}", "DEBUG")
-                        return ""
-                    
-                    # Wait for page to fully load and check if we're on a challenge page
-                    try:
-                        # Wait for page to settle and check for PDF-related elements
-                        await asyncio.sleep(1)
-                        
-                        # Try to wait for PDF-related elements to appear (better than fixed sleep)
-                        try:
-                            await asyncio.wait_for(
-                                page.wait_for_selector(
-                                    'a[data-heap-direct-pdf-link="true"], .alternate-sources__dropdown-button, a[href*=".pdf"]',
-                                    timeout=3000
-                                ),
-                                timeout=3.5
-                            )
-                        except (asyncio.TimeoutError, Exception):
-                            # Elements might not be present, continue anyway
-                            pass
-                        
-                        # Try to get title - this will fail if page is closed
-                        try:
-                            title = await asyncio.wait_for(page.title(), timeout=5.0)
-                        except asyncio.TimeoutError:
-                            if self.verbose:
-                                self._log(f"Timeout getting page title for {paper_id}", "DEBUG")
-                            return ""
-                        except Exception as title_err:
-                            if self.verbose:
-                                self._log(f"Error getting page title for {paper_id}: {title_err}", "DEBUG")
-                            return ""
-                        
-                        if 'verification' in title.lower() or 'challenge' in title.lower():
-                            if self.verbose:
-                                self._log(f"Challenge page detected for {paper_id}, waiting longer...", "DEBUG")
-                            # Wait longer for challenge to complete
-                            await page.wait_for_timeout(5000)
-                            try:
-                                title = await page.title()
-                                if 'verification' in title.lower():
-                                    if self.verbose:
-                                        self._log(f"Still on challenge page for {paper_id}, skipping", "DEBUG")
-                                    return ""
-                            except Exception:
-                                return ""
-                    except Exception as title_exc:
-                        if self.verbose:
-                            self._log(f"Error checking page title for {paper_id}: {title_exc}", "DEBUG")
-                        return ""
-                    
-                    # Extract PDF links from multiple page states
-                    found_links = []
-                    
-                    print(f"[PDF Extraction] 📋 Extracting PDF links from page states...")
-                    
-                    # State 1: Initial load (before interactions)
-                    initial_links = await self._extract_pdf_links_from_page(page, paper_id, "initial")
-                    print(f"[PDF Extraction] 📌 Initial state found {len(initial_links)} links")
-                    found_links.extend(initial_links)
-                    
-                    # State 2: After scrolling (reveal lazy-loaded content)
-                    await self._scroll_and_reveal_content(page, paper_id)
-                    scroll_links = await self._extract_pdf_links_from_page(page, paper_id, "after_scroll")
-                    print(f"[PDF Extraction] 📜 After scroll found {len(scroll_links)} links")
-                    found_links.extend(scroll_links)
-                    
-                    # State 3: After clicking dropdowns
-                    await self._click_dropdowns_and_extract(page, paper_id)
-                    dropdown_links = await self._extract_pdf_links_from_page(page, paper_id, "after_dropdowns")
-                    print(f"[PDF Extraction] 📂 After dropdowns found {len(dropdown_links)} links")
-                    found_links.extend(dropdown_links)
-                    
-                    # Remove duplicates while preserving order
-                    seen = set()
-                    unique_links = []
-                    for link in found_links:
-                        if link not in seen:
-                            seen.add(link)
-                            unique_links.append(link)
-                    found_links = unique_links
-                    
-                    # Extract from modals (Phase 2)
-                    modal_links = await self._extract_from_modals(page, paper_id)
-                    print(f"[PDF Extraction] 🪟 Modals found {len(modal_links)} links")
-                    found_links.extend(modal_links)
-                    
-                    # Remove duplicates again
-                    seen = set(unique_links)
-                    for link in modal_links:
-                        if link not in seen:
-                            seen.add(link)
-                            found_links.append(link)
-                    
-                    # Extract external sources from page HTML (arXiv, DOI)
-                    external_links = await self._extract_external_sources_from_page(page, paper_id)
-                    print(f"[PDF Extraction] 🔗 External sources found {len(external_links)} links")
-                    found_links.extend(external_links)
-                    
-                    # Final deduplication
-                    seen = set()
-                    final_links = []
-                    for link in found_links:
-                        if link not in seen:
-                            seen.add(link)
-                            final_links.append(link)
-                    found_links = final_links
-                    print(f"[PDF Extraction] ✅ Total unique links found: {len(found_links)}")
-                    
-                    # Validate and return first working PDF link found (parallel validation with early exit)
+                    # Validate and return first working link
                     if found_links:
-                        print(f"[PDF Extraction] 🔍 Validating {len(found_links)} links...")
-                        # Validate up to 3 links in parallel for performance
-                        validation_tasks = []
-                        for pdf_link in found_links[:3]:  # Limit to first 3 for parallel validation
-                            validation_tasks.append(self._validate_pdf_link(pdf_link))
-                        
-                        # Run validations in parallel
-                        validation_results = await asyncio.gather(*validation_tasks, return_exceptions=True)
-                        
-                        # Check results and return first valid link
-                        for idx, is_valid in enumerate(validation_results):
-                            pdf_link = found_links[idx]
-                            print(f"[PDF Extraction] ✓ Link {idx+1}: {pdf_link[:70]}... -> {'VALID' if is_valid is True else 'INVALID'}")
-                            if is_valid is True:  # Explicitly check for True (not just truthy)
-                                if self.verbose:
-                                    self._log(f"Found valid PDF from paper page: {pdf_link[:60]}...", "SUCCESS")
-                                print(f"[PDF Extraction] ✅ Returning valid PDF link for {paper_id}")
-                                return pdf_link
-                        
-                        # If parallel validation didn't find valid link, try remaining links sequentially
-                        for pdf_link in found_links[3:]:
-                            is_valid = await self._validate_pdf_link(pdf_link)
-                            print(f"[PDF Extraction] ✓ Link: {pdf_link[:70]}... -> {'VALID' if is_valid else 'INVALID'}")
-                            if is_valid:
-                                if self.verbose:
-                                    self._log(f"Found valid PDF from paper page: {pdf_link[:60]}...", "SUCCESS")
-                                print(f"[PDF Extraction] ✅ Returning valid PDF link for {paper_id}")
-                                return pdf_link
-                            elif self.verbose:
-                                self._log(f"PDF link failed validation (404/dead): {pdf_link[:60]}...", "DEBUG")
-                        
-                        # If all links failed validation, return empty to use Semantic Scholar page
-                        print(f"[PDF Extraction] ❌ All {len(found_links)} links failed validation for {paper_id}")
-                        if self.verbose:
-                            self._log(f"All PDF links failed validation for {paper_id}, using fallback", "DEBUG")
-                        return ""
-                    
-                    print(f"[PDF Extraction] ❌ No PDF links found when scraping {paper_id}")
-                    if self.verbose:
-                        self._log(f"No PDF links found when scraping {paper_id}", "DEBUG")
-                    
-            except Exception as exc:
-                import traceback
-                error_details = traceback.format_exc()
-                error_type = type(exc).__name__
+                        print(f"[PDF Extraction] ✅ Found {len(found_links)} links, validating...")
+                        for pdf_link in found_links[:3]:  # Check first 3 only
+                            try:
+                                is_valid = await asyncio.wait_for(
+                                    self._validate_pdf_link(pdf_link),
+                                    timeout=5.0
+                                )
+                                if is_valid:
+                                    print(f"[PDF Extraction] ✅ Valid PDF found: {pdf_link[:60]}...")
+                                    return pdf_link
+                            except asyncio.TimeoutError:
+                                print(f"[PDF Extraction] ⏱️  Validation timeout for link: {pdf_link[:60]}...")
+                                continue
+                            except Exception as val_exc:
+                                print(f"[PDF Extraction] ⚠️  Validation error: {val_exc}")
+                                continue
+                        print(f"[PDF Extraction] ⚠️  No valid PDF links found for {paper_id}")
+                    else:
+                        print(f"[PDF Extraction] ❌ No PDF links found for {paper_id}")
+                except asyncio.TimeoutError:
+                    print(f"[PDF Extraction] ⏱️  Extraction timeout for {paper_id}")
+                except Exception as extract_exc:
+                    print(f"[PDF Extraction] ❌ Extraction error for {paper_id}: {extract_exc}")
                 
-                # Always log errors for debugging
-                print(f"\n[PDF Extraction] ❌ Playwright scraping failed for {paper_id}")
-                print(f"[PDF Extraction] Error type: {error_type}")
-                print(f"[PDF Extraction] Error message: {exc}")
-                if self.verbose:
-                    print(f"[PDF Extraction] Full traceback:\n{error_details}")
-                    self._log(f"Error scraping paper page {paper_id}: {exc}", "DEBUG")
-                    self._log(f"Error details: {error_details}", "DEBUG")
-                elif "TargetClosedError" in error_type:
-                    # This is a known compatibility issue - log it
-                    print(f"⚠️  Playwright compatibility issue detected. Consider upgrading Playwright: pip install --upgrade playwright")
+                return ""
                 
-                # Context manager will cleanup automatically
-        
-            # Fallback: return empty string (will use Semantic Scholar page link)
-            print(f"[PDF Extraction] ⚠️  Playwright not available or failed, returning empty for {paper_id}")
+        except asyncio.TimeoutError:
+            print(f"[PDF Extraction] ⏱️  Overall timeout for {paper_id}")
             return ""
+        except Exception as exc:
+            import traceback
+            error_details = traceback.format_exc()
+            error_type = type(exc).__name__
+            
+            # Always log errors for debugging
+            print(f"\n[PDF Extraction] ❌ Playwright scraping failed for {paper_id}")
+            print(f"[PDF Extraction] Error type: {error_type}")
+            print(f"[PDF Extraction] Error message: {exc}")
+            if self.verbose:
+                print(f"[PDF Extraction] Full traceback:\n{error_details}")
+                self._log(f"Error scraping paper page {paper_id}: {exc}", "DEBUG")
+                self._log(f"Error details: {error_details}", "DEBUG")
+            return ""
+        finally:
+            # Ensure browser is closed
+            try:
+                if browser:
+                    await browser.close()
+                    print(f"[PDF Extraction] ✅ Browser closed for {paper_id}")
+            except Exception as close_exc:
+                print(f"[PDF Extraction] ⚠️  Error closing browser: {close_exc}")
+    
+    async def _extract_all_pdf_links_simple(self, page, paper_id: str) -> List[str]:
+        """Extract PDF links using simplified strategies (faster, less likely to hang)."""
+        found_links = []
+        
+        try:
+            # Wait a bit for page to render
+            await asyncio.sleep(1)
+            
+            # Strategy 1: Get all links with .pdf
+            try:
+                all_links = await page.query_selector_all('a[href*=".pdf"]')
+                print(f"[PDF Extraction] 📊 Found {len(all_links)} links with .pdf extension")
+                for link in all_links:
+                    try:
+                        href = await link.get_attribute('href')
+                        if href and href.startswith('http') and 'semanticscholar.org' not in href:
+                            found_links.append(href)
+                    except Exception:
+                        continue
+            except Exception as exc:
+                print(f"[PDF Extraction] ⚠️  Error in Strategy 1: {exc}")
+            
+            # Strategy 2: Check for data-heap-direct-pdf-link
+            try:
+                heap_links = await page.query_selector_all('a[data-heap-direct-pdf-link="true"]')
+                print(f"[PDF Extraction] 📊 Found {len(heap_links)} heap-direct-pdf-link elements")
+                for link in heap_links:
+                    try:
+                        href = await link.get_attribute('href')
+                        if href and href.startswith('http') and 'semanticscholar.org' not in href:
+                            if href not in found_links:
+                                found_links.append(href)
+                    except Exception:
+                        continue
+            except Exception as exc:
+                print(f"[PDF Extraction] ⚠️  Error in Strategy 2: {exc}")
+            
+            # Strategy 3: Check alternate-sources buttons
+            try:
+                alt_links = await page.query_selector_all('a.alternate-sources__dropdown-button')
+                print(f"[PDF Extraction] 📊 Found {len(alt_links)} alternate-sources buttons")
+                for link in alt_links:
+                    try:
+                        href = await link.get_attribute('href')
+                        if href and href.startswith('http') and '.pdf' in href.lower() and 'semanticscholar.org' not in href:
+                            if href not in found_links:
+                                found_links.append(href)
+                    except Exception:
+                        continue
+            except Exception as exc:
+                print(f"[PDF Extraction] ⚠️  Error in Strategy 3: {exc}")
+                    
+        except Exception as exc:
+            print(f"[PDF Extraction] ❌ Error extracting links: {exc}")
+        
+        # Remove duplicates
+        seen = set()
+        unique_links = []
+        for link in found_links:
+            if link not in seen:
+                seen.add(link)
+                unique_links.append(link)
+        
+        print(f"[PDF Extraction] ✅ Total unique links found: {len(unique_links)}")
+        return unique_links
     
     async def _extract_pdf_links_from_page(self, page, paper_id: str, state: str) -> List[str]:
         """Extract PDF links from page using all strategies."""
@@ -1142,7 +1136,7 @@ class SemanticScholarScraper:
                 if doi_pdf:
                     print(f"[PDF Extraction] ✅ Found PDF via DOI: {doi_pdf[:60]}...")
                     download_link = doi_pdf
-                    self.stats["download_links_found"] += 1
+                self.stats["download_links_found"] += 1
                 else:
                     print(f"[PDF Extraction] ❌ No PDF found via DOI for {paper_id}")
             
