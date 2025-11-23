@@ -37,15 +37,22 @@ app.mount("/artifacts", StaticFiles(directory=ARTIFACT_DIR), name="artifacts")
 async def _ensure_playwright_browsers():
     """Ensure Playwright browsers are installed, install if missing."""
     try:
-        # Check if browsers are installed
-        result = subprocess.run(
-            ["playwright", "install", "--dry-run", "chromium"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            # Browsers not installed, install them
+        # First, try to get the executable path to check if browsers actually exist
+        browser_exists = False
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser_path = p.chromium.executable_path
+                if browser_path and Path(browser_path).exists():
+                    print(f"[Startup] ✅ Playwright browsers already installed at: {browser_path}")
+                    browser_exists = True
+                else:
+                    print(f"[Startup] ⚠️  Browser executable not found at: {browser_path}")
+        except Exception as check_exc:
+            print(f"[Startup] ⚠️  Could not check browser path: {check_exc}")
+        
+        if not browser_exists:
+            # Browsers don't exist, install them
             print("[Startup] Installing Playwright browsers...")
             install_result = subprocess.run(
                 ["playwright", "install", "chromium"],
@@ -55,12 +62,18 @@ async def _ensure_playwright_browsers():
             )
             if install_result.returncode == 0:
                 print("[Startup] ✅ Playwright browsers installed successfully")
+                if install_result.stdout:
+                    print(f"[Startup] Installation output: {install_result.stdout[:500]}")
             else:
-                print(f"[Startup] ⚠️  Browser installation failed: {install_result.stderr}")
-        else:
-            print("[Startup] ✅ Playwright browsers already installed")
+                print(f"[Startup] ⚠️  Browser installation failed (exit code: {install_result.returncode})")
+                if install_result.stderr:
+                    print(f"[Startup] Error: {install_result.stderr[:500]}")
+                if install_result.stdout:
+                    print(f"[Startup] Output: {install_result.stdout[:500]}")
     except Exception as exc:
         print(f"[Startup] ⚠️  Could not check/install browsers: {exc}")
+        import traceback
+        print(f"[Startup] Traceback: {traceback.format_exc()}")
 
 
 @app.on_event("startup")
