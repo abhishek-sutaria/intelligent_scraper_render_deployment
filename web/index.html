@@ -9,20 +9,20 @@
   <body>
     <main class="container">
       <header>
-        <h1>Google Scholar Scraper</h1>
+        <h1>Semantic Scholar Scraper</h1>
         <p>
-          Paste a public Google Scholar profile link, choose how many papers you want,
+          Paste a public Semantic Scholar author link, choose how many papers you want,
           and we will collect them into an interactive checklist.
         </p>
       </header>
 
       <form id="scrape-form" class="card">
-        <label for="profile-url">Scholar Profile URL</label>
+        <label for="profile-url">Author Profile URL</label>
         <input
           id="profile-url"
           type="url"
           name="profileUrl"
-          placeholder="https://scholar.google.com/citations?user=XXXX&hl=en"
+          placeholder="https://www.semanticscholar.org/author/Jonah-A.-Berger/40066064"
           required
         />
 
@@ -60,7 +60,7 @@
 
       <footer>
         <small>
-          Playwright must be installed on the server. Respect Google Scholar's rate limits and terms of service.
+          Uses the official Semantic Scholar API. Respect their terms of service and rate limits.
         </small>
       </footer>
     </main>

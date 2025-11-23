@@ -1,5 +1,5 @@
 """
-Main entry point for Google Scholar Profile Scraper
+Main entry point for Semantic Scholar Profile Scraper
 """
 import argparse
 import asyncio
@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from scraper import GoogleScholarScraper
+from semantic_scholar_scraper import SemanticScholarScraper
 from extractor import PaperExtractor
 from html_generator import HTMLGenerator
 
@@ -15,33 +15,27 @@ from html_generator import HTMLGenerator
 async def main():
     """Main function to orchestrate scraping and HTML generation"""
     parser = argparse.ArgumentParser(
-        description='Scrape Google Scholar profile and generate HTML checklist',
+        description='Scrape Semantic Scholar author profile and generate HTML checklist',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example:
-  python main.py x8xNLZQAAAAJ
-  python main.py x8xNLZQAAAAJ --visible
-  python main.py x8xNLZQAAAAJ --output custom_name.html
+  python main.py 40066064
+  python main.py "Jonah A. Berger"
+  python main.py https://www.semanticscholar.org/author/Jonah-A.-Berger/40066064 --api-key YOUR_API_KEY
         """
     )
     
     parser.add_argument(
-        'user_id',
+        'author_input',
         type=str,
-        help='Google Scholar user ID (e.g., x8xNLZQAAAAJ)'
-    )
-    
-    parser.add_argument(
-        '--visible',
-        action='store_true',
-        help='Run browser in visible mode (default: headless)'
+        help='Semantic Scholar author ID, name, or profile URL'
     )
     
     parser.add_argument(
         '--output',
         type=str,
         default=None,
-        help='Output HTML filename (default: scholar_{user_id}.html)'
+        help='Output HTML filename (default: semantic_scholar_{author_id}.html)'
     )
     
     parser.add_argument(
@@ -58,6 +52,13 @@ Example:
     )
     
     parser.add_argument(
+        '--api-key',
+        type=str,
+        default=None,
+        help='Semantic Scholar API key (optional, for higher rate limits)'
+    )
+    
+    parser.add_argument(
         '--debug-report',
         type=str,
         default=None,
@@ -66,9 +67,12 @@ Example:
     
     args = parser.parse_args()
     
-    # Validate user ID
-    if not args.user_id or len(args.user_id) < 5:
-        print("Error: Invalid user ID. Please provide a valid Google Scholar user ID.")
+    if not args.author_input or len(args.author_input.strip()) == 0:
+        print("Error: Invalid author input. Provide an author ID, name, or Semantic Scholar URL.")
+        sys.exit(1)
+    author_identifier = SemanticScholarScraper.extract_author_id_from_url(args.author_input)
+    if not author_identifier:
+        print("Error: Unable to parse author identifier. Please double-check the input.")
         sys.exit(1)
     
     # Determine output filename
@@ -77,14 +81,16 @@ Example:
         if not output_file.endswith('.html'):
             output_file += '.html'
     else:
-        output_file = f"scholar_{args.user_id}.html"
+        safe_id = author_identifier.replace('/', '_').replace(' ', '_')
+        output_file = f"semantic_scholar_{safe_id}.html"
     
     print("=" * 60)
-    print("Google Scholar Profile Scraper")
+    print("Semantic Scholar Profile Scraper")
     print("=" * 60)
-    print(f"User ID: {args.user_id}")
+    print(f"Author Input: {args.author_input}")
+    print(f"Resolved Author ID/Name: {author_identifier}")
     print(f"Max Papers: {args.max_papers}")
-    print(f"Browser Mode: {'Visible' if args.visible else 'Headless'}")
+    print(f"API Key Provided: {'Yes' if args.api_key else 'No'}")
     print(f"Output File: {output_file}")
     print("=" * 60)
     print()
@@ -92,8 +98,8 @@ Example:
     collect_debug = bool(args.debug_report)
     
     # Initialize scraper
-    scraper = GoogleScholarScraper(
-        headless=not args.visible,
+    scraper = SemanticScholarScraper(
+        api_key=args.api_key,
         max_papers=args.max_papers,
         verbose=args.verbose,
         collect_debug=collect_debug
@@ -102,13 +108,14 @@ Example:
     # Scrape profile
     print("Starting scraping process...")
     try:
-        papers = await scraper.scrape_profile(args.user_id)
+        papers = await scraper.scrape_profile(args.author_input)
         
         if not papers:
             print("\nError: No papers found. Please check:")
-            print("  1. The user ID is correct")
-            print("  2. The profile is public and accessible")
+            print("  1. The author ID/name/URL is correct")
+            print("  2. The author has public papers on Semantic Scholar")
             print("  3. Your internet connection is working")
+            print("  4. (Optional) Provide an API key if you hit rate limits")
             sys.exit(1)
         
         print(f"\nSuccessfully scraped {len(papers)} papers!")
@@ -143,27 +150,7 @@ Example:
         
         print(f"Papers with DOI: {papers_with_doi}")
         print(f"Papers with Download Link: {papers_with_download}")
-        
-        # Print detailed statistics if available
-        if hasattr(scraper, 'stats') and scraper.stats:
-            stats = scraper.stats
-            if stats.get('download_gs', 0) > 0 or stats.get('download_scihub', 0) > 0:
-                print(f"\nDownload Link Sources:")
-                print(f"  - Google Scholar: {stats.get('download_gs', 0)}")
-                print(f"  - Sci-Hub: {stats.get('download_scihub', 0)}")
-                print(f"  - Not Found: {stats.get('download_none', 0)}")
-            
-            if stats.get('scihub_attempts', 0) > 0:
-                print(f"\nSci-Hub Statistics:")
-                print(f"  - Attempts: {stats.get('scihub_attempts', 0)}")
-                print(f"  - Success: {stats.get('scihub_success', 0)}")
-                print(f"  - Failed: {stats.get('scihub_failed', 0)}")
-            
-            if stats.get('doi_found', 0) > 0 and args.verbose:
-                print(f"\nDOI Extraction Strategies:")
-                for strategy, count in stats.get('doi_strategies', {}).items():
-                    if count > 0:
-                        print(f"  - Strategy {strategy}: {count}")
+        print(f"API Calls Made: {scraper.stats.get('api_calls', 0)}")
         
         print("=" * 60)
         
@@ -171,7 +158,7 @@ Example:
             debug_report_path = Path(args.debug_report)
             if not debug_report_path.parent.exists():
                 debug_report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_payload = scraper.build_debug_report(args.user_id)
+            report_payload = scraper.build_debug_report(author_identifier)
             debug_report_path.write_text(json.dumps(report_payload, indent=2), encoding='utf-8')
             print(f"\nDebug report saved to: {debug_report_path.absolute()}")
         

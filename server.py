@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import traceback
 import urllib.parse
 import uuid
@@ -15,24 +17,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from extractor import PaperExtractor
 from html_generator import HTMLGenerator
-from scraper import GoogleScholarScraper
-
-# Verify Playwright browsers are available at startup
-PLAYWRIGHT_PATH = os.getenv('PLAYWRIGHT_BROWSERS_PATH', '')
-if PLAYWRIGHT_PATH:
-    browser_path = Path(PLAYWRIGHT_PATH)
-    if not browser_path.exists():
-        print(f"WARNING: PLAYWRIGHT_BROWSERS_PATH {PLAYWRIGHT_PATH} does not exist!")
-    else:
-        print(f"✓ Playwright browsers path verified: {PLAYWRIGHT_PATH}")
-        # List what's in the directory for debugging
-        try:
-            contents = list(browser_path.iterdir())
-            print(f"  Found {len(contents)} items in browser directory")
-        except Exception as e:
-            print(f"  Could not list directory contents: {e}")
-else:
-    print("INFO: PLAYWRIGHT_BROWSERS_PATH not set, using default Playwright cache location")
+from semantic_scholar_scraper import SemanticScholarScraper
 
 BASE_DIR = Path(__file__).parent
 WEB_DIR = BASE_DIR / "web"
@@ -62,19 +47,21 @@ class ScrapeRequest(BaseModel):
 jobs: Dict[str, Dict[str, Any]] = {}
 
 
-def extract_user_id(profile_url: str) -> str:
+def extract_author_id(profile_url: str) -> str:
     parsed = urllib.parse.urlparse(profile_url)
-    query = urllib.parse.parse_qs(parsed.query)
-    user_values = query.get("user")
-    if user_values and user_values[0]:
-        return user_values[0]
-    raise ValueError("Google Scholar profile URL must contain a 'user' query parameter.")
+    path_parts = parsed.path.rstrip("/").split("/")
+    if len(path_parts) >= 2 and path_parts[-1].isdigit():
+        return path_parts[-1]
+    raise ValueError(
+        "Semantic Scholar profile URL must look like "
+        "'https://www.semanticscholar.org/author/Name/ID'."
+    )
 
 
 @app.post("/api/scrape")
 async def start_scrape(request: ScrapeRequest) -> Dict[str, str]:
     try:
-        user_id = extract_user_id(str(request.profile_url))
+        author_id = extract_author_id(str(request.profile_url))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -91,7 +78,7 @@ async def start_scrape(request: ScrapeRequest) -> Dict[str, str]:
     asyncio.create_task(
         run_scrape_job(
             job_id=job_id,
-            user_id=user_id,
+            author_id=author_id,
             profile_url=str(request.profile_url),
             max_papers=request.max_papers,
         )
@@ -108,7 +95,110 @@ async def scrape_status(job_id: str) -> Dict[str, Any]:
     return job
 
 
-async def run_scrape_job(job_id: str, user_id: str, profile_url: str, max_papers: int) -> None:
+@app.get("/api/diagnose/playwright")
+async def diagnose_playwright() -> Dict[str, Any]:
+    """Diagnostic endpoint to test Playwright installation and browser availability."""
+    diagnostics = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "python_version": sys.version,
+        "playwright_package": {},
+        "browser_installation": {},
+        "browser_launch_test": {},
+        "environment": {},
+        "file_system_checks": {},
+    }
+    
+    # 1. Check Playwright Python package
+    try:
+        from playwright.async_api import async_playwright
+        diagnostics["playwright_package"]["imported"] = True
+        diagnostics["playwright_package"]["version"] = "unknown"  # Playwright doesn't expose version easily
+    except ImportError as exc:
+        diagnostics["playwright_package"]["imported"] = False
+        diagnostics["playwright_package"]["error"] = str(exc)
+        return diagnostics
+    
+    # 2. Check browser installation via CLI
+    try:
+        result = subprocess.run(
+            ["playwright", "install", "--dry-run", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        diagnostics["browser_installation"]["dry_run_exit_code"] = result.returncode
+        diagnostics["browser_installation"]["dry_run_stdout"] = result.stdout
+        diagnostics["browser_installation"]["dry_run_stderr"] = result.stderr
+        diagnostics["browser_installation"]["browsers_installed"] = result.returncode == 0
+    except FileNotFoundError:
+        diagnostics["browser_installation"]["playwright_cli_not_found"] = True
+    except subprocess.TimeoutExpired:
+        diagnostics["browser_installation"]["timeout"] = True
+    except Exception as exc:
+        diagnostics["browser_installation"]["error"] = str(exc)
+    
+    # 3. Check browser executable paths
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser_path = p.chromium.executable_path
+            diagnostics["browser_installation"]["executable_path"] = browser_path
+            diagnostics["browser_installation"]["executable_exists"] = Path(browser_path).exists() if browser_path else False
+    except Exception as exc:
+        diagnostics["browser_installation"]["executable_check_error"] = str(exc)
+    
+    # 4. Try to actually launch a browser
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                ],
+                timeout=10000,
+            )
+            diagnostics["browser_launch_test"]["success"] = True
+            diagnostics["browser_launch_test"]["browser_version"] = browser.version
+            await browser.close()
+    except Exception as exc:
+        diagnostics["browser_launch_test"]["success"] = False
+        diagnostics["browser_launch_test"]["error_type"] = type(exc).__name__
+        diagnostics["browser_launch_test"]["error_message"] = str(exc)
+        diagnostics["browser_launch_test"]["traceback"] = traceback.format_exc()
+    
+    # 5. Check environment variables
+    diagnostics["environment"]["PLAYWRIGHT_BROWSERS_PATH"] = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "not set")
+    diagnostics["environment"]["PATH"] = os.getenv("PATH", "not set")
+    diagnostics["environment"]["HOME"] = os.getenv("HOME", "not set")
+    diagnostics["environment"]["USER"] = os.getenv("USER", "not set")
+    
+    # 6. Check common browser cache locations
+    cache_paths = [
+        "/opt/render/.cache/ms-playwright",
+        os.path.expanduser("~/.cache/ms-playwright"),
+        "/tmp/.cache/ms-playwright",
+    ]
+    for cache_path in cache_paths:
+        path_obj = Path(cache_path)
+        diagnostics["file_system_checks"][cache_path] = {
+            "exists": path_obj.exists(),
+            "is_dir": path_obj.is_dir() if path_obj.exists() else False,
+        }
+        if path_obj.exists() and path_obj.is_dir():
+            try:
+                chromium_dirs = list(path_obj.glob("chromium*"))
+                diagnostics["file_system_checks"][cache_path]["chromium_dirs"] = [
+                    str(d) for d in chromium_dirs
+                ]
+            except Exception as exc:
+                diagnostics["file_system_checks"][cache_path]["list_error"] = str(exc)
+    
+    return diagnostics
+
+
+async def run_scrape_job(job_id: str, author_id: str, profile_url: str, max_papers: int) -> None:
     job = jobs[job_id]
 
     def progress_handler(stage: str, current: int, total: int, percentage: float) -> None:
@@ -118,15 +208,15 @@ async def run_scrape_job(job_id: str, user_id: str, profile_url: str, max_papers
         job["message"] = f"{stage}… {percent_value}% complete"
 
     job["status"] = "running"
-    job["message"] = "Launching browser…"
+    job["message"] = "Fetching data…"
     job["percentage"] = 5
 
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    html_path = HTML_DIR / f"scholar_{user_id}_{timestamp}.html"
-    debug_path = DEBUG_DIR / f"debug_{user_id}_{timestamp}.json"
+    html_path = HTML_DIR / f"semantic_scholar_{author_id}_{timestamp}.html"
+    debug_path = DEBUG_DIR / f"debug_{author_id}_{timestamp}.json"
 
-    scraper = GoogleScholarScraper(
-        headless=True,
+    scraper = SemanticScholarScraper(
+        api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
         max_papers=max_papers,
         verbose=False,
         collect_debug=True,
@@ -134,18 +224,18 @@ async def run_scrape_job(job_id: str, user_id: str, profile_url: str, max_papers
     )
 
     try:
-        papers = await scraper.scrape_profile(user_id)
+        papers = await scraper.scrape_profile(author_id)
         if not papers:
             job["status"] = "failed"
-            job["message"] = "No papers found for this profile."
+            job["message"] = "No papers found for this author."
             job["percentage"] = 100
             return
 
         validated_papers = [PaperExtractor.validate_paper_data(paper) for paper in papers]
-        html_content = HTMLGenerator.generate_html(validated_papers, user_id)
+        html_content = HTMLGenerator.generate_html(validated_papers, author_id)
         html_path.write_text(html_content, encoding="utf-8")
 
-        debug_report = scraper.build_debug_report(user_id=user_id)
+        debug_report = scraper.build_debug_report(user_id=author_id)
         debug_path.write_text(json.dumps(debug_report, indent=2), encoding="utf-8")
 
         job["status"] = "completed"
@@ -153,7 +243,7 @@ async def run_scrape_job(job_id: str, user_id: str, profile_url: str, max_papers
         job["percentage"] = 100
         job["stage"] = "Completed"
         job["result"] = {
-            "user_id": user_id,
+            "author_id": author_id,
             "profile_url": profile_url,
             "total_papers": len(validated_papers),
             "html_url": f"/artifacts/html/{html_path.name}",

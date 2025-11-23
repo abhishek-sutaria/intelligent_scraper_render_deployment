@@ -20,9 +20,9 @@ git push
 
 ### Step 3: Wait & Test
 
-- First deployment: **5-10 minutes** (Playwright install)
+- First deployment: **~2 minutes**
 - You'll get a URL like: `https://scholar-scraper.onrender.com`
-- Test it by scraping a profile!
+- Test it by scraping a Semantic Scholar author profile!
 
 ## ✅ That's it!
 

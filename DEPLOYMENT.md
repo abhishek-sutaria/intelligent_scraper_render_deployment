@@ -1,6 +1,6 @@
 # Deployment Guide for Render
 
-This guide will help you deploy the Google Scholar Scraper to Render's free tier.
+This guide will help you deploy the Semantic Scholar Scraper to Render's free tier.
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ git push -u origin main
    - **Runtime**: `Python 3`
    - **Build Command**: 
      ```
-     pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium
+     pip install -r requirements.txt
      ```
    - **Start Command**: 
      ```
@@ -63,14 +63,14 @@ git push -u origin main
 
 ### 4. Wait for Deployment
 
-- First deployment takes **5-10 minutes** (Playwright installation is slow)
+- First deployment takes **1-2 minutes**
 - You'll see build logs in real-time
 - Once deployed, you'll get a URL like: `https://scholar-scraper.onrender.com`
 
 ### 5. Test Your Deployment
 
 1. Visit your Render URL
-2. Try scraping a Google Scholar profile
+2. Try scraping a Semantic Scholar author profile
 3. Check that the web interface loads correctly
 
 ## Important Notes
@@ -84,7 +84,7 @@ git push -u origin main
 
 ### Environment Variables
 
-No environment variables are required for basic deployment. The app will work out of the box.
+- `SEMANTIC_SCHOLAR_API_KEY` (optional): set if you have an API key for higher rate limits.
 
 ### Troubleshooting
 
@@ -93,11 +93,6 @@ No environment variables are required for basic deployment. The app will work ou
 - Check build logs in Render dashboard
 - Ensure `requirements.txt` is correct
 - Verify Python version compatibility (3.11.0 is specified in render.yaml)
-
-#### Playwright Installation Issues
-
-- The build command includes `playwright install-deps chromium` which installs system dependencies
-- If it fails, check Render's build logs for specific errors
 
 #### App Crashes
 

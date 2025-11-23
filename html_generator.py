@@ -8,13 +8,13 @@ class HTMLGenerator:
     """Generates interactive HTML checklist table for papers"""
     
     @staticmethod
-    def generate_html(papers: List[Dict], user_id: str) -> str:
+    def generate_html(papers: List[Dict], author_id: str) -> str:
         """
         Generate HTML file with interactive checklist table
         
         Args:
             papers: List of paper dictionaries
-            user_id: Google Scholar user ID
+            author_id: Semantic Scholar author identifier
             
         Returns:
             HTML string
@@ -24,9 +24,7 @@ class HTMLGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Scholar Papers - {user_id}</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <title>Semantic Scholar Papers - {author_id}</title>
     <style>
         * {{
             margin: 0;
@@ -272,17 +270,6 @@ class HTMLGenerator:
         }}
         
         th:nth-child(9) {{
-            width: 100px;
-            min-width: 100px;
-            max-width: 100px;
-            text-align: center;
-            white-space: normal;
-            word-break: break-word;
-            line-height: 1.2;
-            padding: 12px 8px;
-        }}
-        
-        th:nth-child(10) {{
             width: 150px;
             min-width: 150px;
             max-width: 150px;
@@ -294,16 +281,6 @@ class HTMLGenerator:
         }}
         
         td:nth-child(9) {{
-            text-align: center;
-            padding: 4px;
-            width: 100px;
-            min-width: 100px;
-            max-width: 100px;
-            overflow: hidden;
-            vertical-align: middle;
-        }}
-        
-        td:nth-child(10) {{
             text-align: center;
             padding: 8px;
             width: 150px;
@@ -456,131 +433,6 @@ class HTMLGenerator:
             font-size: 0.9em;
         }}
         
-        .trend-icon-btn {{
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 8px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.2s ease;
-            display: block;
-            width: 100%;
-            max-width: 100%;
-            box-sizing: border-box;
-            text-align: center;
-            line-height: 1.4;
-            margin: 0;
-        }}
-        
-        .trend-icon-btn:hover {{
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-        }}
-        
-        .trend-icon-btn:disabled {{
-            background: #e5e7eb;
-            color: #9ca3af;
-            cursor: not-allowed;
-            opacity: 0.5;
-        }}
-        
-        .trend-icon-btn:disabled:hover {{
-            transform: none;
-            box-shadow: none;
-        }}
-        
-        /* Modal styles */
-        .trend-modal {{
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(4px);
-            animation: fadeIn 0.2s ease;
-        }}
-        
-        .trend-modal.active {{
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        
-        .trend-modal-content {{
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            max-width: 800px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            animation: slideUp 0.3s ease;
-            position: relative;
-        }}
-        
-        .trend-modal-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #e5e7eb;
-        }}
-        
-        .trend-modal-title {{
-            font-size: 1.5em;
-            font-weight: 700;
-            color: #1e3a8a;
-        }}
-        
-        .trend-modal-close {{
-            background: #ef4444;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            width: 32px;
-            height: 32px;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }}
-        
-        .trend-modal-close:hover {{
-            background: #dc2626;
-            transform: scale(1.1);
-        }}
-        
-        .trend-chart-container {{
-            position: relative;
-            height: 400px;
-            margin-top: 20px;
-        }}
-        
-        @keyframes fadeIn {{
-            from {{ opacity: 0; }}
-            to {{ opacity: 1; }}
-        }}
-        
-        @keyframes slideUp {{
-            from {{
-                opacity: 0;
-                transform: translateY(20px);
-            }}
-            to {{
-                opacity: 1;
-                transform: translateY(0);
-            }}
-        }}
         
         .footer {{
             padding: 25px 40px;
@@ -660,7 +512,7 @@ class HTMLGenerator:
     <div class="container">
         <div class="header">
             <h1>📚 Research Papers Checklist</h1>
-            <p>Google Scholar Profile: {user_id}</p>
+            <p>Semantic Scholar Profile: {author_id}</p>
         </div>
         
         <div class="controls">
@@ -688,7 +540,6 @@ class HTMLGenerator:
                         <th>Publication</th>
                         <th>Citations</th>
                         <th>DOI</th>
-                        <th>Trend Analysis</th>
                         <th>Download Link</th>
                     </tr>
                 </thead>
@@ -699,7 +550,7 @@ class HTMLGenerator:
         </div>
         
         <div class="footer">
-            Generated by Google Scholar Scraper | {HTMLGenerator._get_current_date()}
+            Generated by Semantic Scholar Scraper | {HTMLGenerator._get_current_date()}
         </div>
     </div>
     
@@ -753,7 +604,7 @@ class HTMLGenerator:
                         publication: cells[5].textContent.trim(),
                         citations: cells[6].textContent.trim(),
                         doi: cells[7].textContent.trim(),
-                        downloadLink: cells[9].querySelector('a') ? cells[9].querySelector('a').href : ''
+                        downloadLink: cells[8].querySelector('a') ? cells[8].querySelector('a').href : ''
                     }});
                 }}
             }});
@@ -801,284 +652,17 @@ class HTMLGenerator:
             restoreDownloadedState();
         }});
         
-        // Trend Modal and Chart Functions
-        let trendChart = null;
-        
-        function openTrendModal(paperIdx, trendData, paperTitle) {{
-            try {{
-                const modal = document.getElementById('trendModal');
-                const modalTitle = document.getElementById('trendModalTitle');
-                const chartCanvas = document.getElementById('trendChart');
-                
-                if (!modal || !modalTitle || !chartCanvas) {{
-                    console.error('Modal elements not found');
-                    return;
-                }}
-                
-                modalTitle.textContent = paperTitle || 'Citation Trend';
-                modal.classList.add('active');
-                
-                // Destroy existing chart if it exists
-                if (trendChart) {{
-                    trendChart.destroy();
-                    trendChart = null;
-                }}
-                
-                // Parse and validate trend data
-                let data = [];
-                console.log('openTrendModal called with:', {{ paperIdx: paperIdx, trendDataLength: trendData ? trendData.length : 0, paperTitle: paperTitle }});
-                try {{
-                    if (typeof trendData === 'string') {{
-                        console.log('Parsing string trend data');
-                        data = JSON.parse(trendData);
-                    }} else {{
-                        console.log('Using trend data as-is (already parsed)');
-                        data = trendData;
-                    }}
-                    console.log('Parsed data type:', Array.isArray(data) ? 'array' : typeof data);
-                    console.log('Parsed data length:', data.length);
-                }} catch(e) {{
-                    console.error('Error parsing trend data:', e);
-                    console.error('Trend data that failed:', trendData);
-                    modalTitle.textContent = 'Error: Invalid trend data - ' + e.message;
-                    return;
-                }}
-                
-                // Validate data structure
-                if (!Array.isArray(data)) {{
-                    console.error('Data is not an array:', typeof data, data);
-                    modalTitle.textContent = 'Error: Data is not an array';
-                    return;
-                }}
-                if (data.length === 0) {{
-                    console.error('Data array is empty');
-                    modalTitle.textContent = 'Error: No trend data available (empty array)';
-                    return;
-                }}
-                console.log('Data validation passed. Data points:', data.length);
-                
-                // Prepare chart data with validation
-                const years = [];
-                const citations = [];
-                
-                    console.log('Processing', data.length, 'data points');
-                    for (let i = 0; i < data.length; i++) {{
-                        const item = data[i];
-                        console.log('Processing item ' + i + ':', item);
-                    
-                    if (!item) {{
-                        console.warn('Item ' + i + ' is null/undefined');
-                        continue;
-                    }}
-                    if (typeof item !== 'object') {{
-                        console.warn('Item ' + i + ' is not an object:', typeof item);
-                        continue;
-                    }}
-                    if (!('year' in item)) {{
-                        console.warn('Item ' + i + ' missing year key. Keys:', Object.keys(item));
-                        continue;
-                    }}
-                    if (!('citations' in item)) {{
-                        console.warn('Item ' + i + ' missing citations key. Keys:', Object.keys(item));
-                        continue;
-                    }}
-                    
-                    const year = String(item.year);
-                    const citation = parseInt(item.citations);
-                    console.log('Item ' + i + ' parsed: year=' + year + ', citation=' + citation);
-                    
-                    if (!year) {{
-                        console.warn('Item ' + i + ' has empty year');
-                        continue;
-                    }}
-                    if (isNaN(citation)) {{
-                        console.warn('Item ' + i + ' citation is NaN:', item.citations);
-                        continue;
-                    }}
-                    if (citation < 0) {{
-                        console.warn('Item ' + i + ' citation is negative:', citation);
-                        continue;
-                    }}
-                    
-                    years.push(year);
-                    citations.push(citation);
-                    console.log('Item ' + i + ' added: year=' + year + ', citations=' + citation);
-                }}
-                
-                console.log('Final years array:', years);
-                console.log('Final citations array:', citations);
-                console.log('Years length:', years.length, 'Citations length:', citations.length);
-                
-                if (years.length === 0 || citations.length === 0) {{
-                    console.error('No valid data points found after processing');
-                    console.error('Years:', years);
-                    console.error('Citations:', citations);
-                        modalTitle.textContent = 'Error: No valid trend data (processed ' + data.length + ' items, got ' + years.length + ' years, ' + citations.length + ' citations)';
-                    return;
-                }}
-                
-                console.log('Creating chart with', years.length, 'data points');
-                
-                // Create chart - use bar chart to match Google Scholar
-                const ctx = chartCanvas.getContext('2d');
-                trendChart = new Chart(ctx, {{
-                type: 'bar',
-                data: {{
-                    labels: years,
-                    datasets: [{{
-                        label: 'Cumulative Citations',
-                        data: citations,
-                        backgroundColor: 'rgba(99, 102, 241, 0.8)',
-                        borderColor: 'rgb(99, 102, 241)',
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        borderSkipped: false
-                    }}]
-                }},
-                options: {{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {{
-                        title: {{
-                            display: true,
-                            text: 'Citation Trend Over Time',
-                            font: {{
-                                size: 18,
-                                weight: 'bold'
-                            }},
-                            color: '#1e3a8a'
-                        }},
-                        legend: {{
-                            display: true,
-                            position: 'top'
-                        }},
-                        tooltip: {{
-                            enabled: true,
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {{
-                                label: function(context) {{
-                                    return 'Year: ' + context.label + ' | Citations: ' + context.parsed.y.toLocaleString();
-                                }}
-                            }}
-                        }},
-                        zoom: {{
-                            zoom: {{
-                                wheel: {{
-                                    enabled: true
-                                }},
-                                pinch: {{
-                                    enabled: true
-                                }},
-                                mode: 'x'
-                            }},
-                            pan: {{
-                                enabled: true,
-                                mode: 'x'
-                            }}
-                        }}
-                    }},
-                    scales: {{
-                        x: {{
-                            title: {{
-                                display: true,
-                                text: 'Year',
-                                font: {{
-                                    size: 14,
-                                    weight: 'bold'
-                                }}
-                            }},
-                            grid: {{
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            }}
-                        }},
-                        y: {{
-                            title: {{
-                                display: true,
-                                text: 'Cumulative Citations',
-                                font: {{
-                                    size: 14,
-                                    weight: 'bold'
-                                }}
-                            }},
-                            beginAtZero: true,
-                            ticks: {{
-                                callback: function(value) {{
-                                    return value.toLocaleString();
-                                }}
-                            }},
-                            grid: {{
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            }}
-                        }}
-                    }}
-                }}
-            }});
-            }} catch(error) {{
-                console.error('Error creating chart:', error);
-                modalTitle.textContent = 'Error: Failed to create chart';
-            }}
-        }}
-        
-        function closeTrendModal() {{
-            const modal = document.getElementById('trendModal');
-            modal.classList.remove('active');
-            if (trendChart) {{
-                trendChart.destroy();
-                trendChart = null;
-            }}
-        }}
-        
-        // Event delegation for trend buttons
-        document.addEventListener('click', function(event) {{
-            if (event.target && event.target.classList.contains('trend-icon-btn') && !event.target.disabled) {{
-                const btn = event.target;
-                const trendDataB64 = btn.getAttribute('data-trend-b64');
-                const paperTitle = btn.getAttribute('data-title');
-                const paperIdx = btn.getAttribute('data-paper-idx');
-                
-                if (trendDataB64 && paperTitle) {{
-                    try {{
-                        // Decode base64 to get JSON string
-                        const trendDataJson = atob(trendDataB64);
-                        console.log('Decoded trend data JSON:', trendDataJson.substring(0, 200));
-                        const trendData = JSON.parse(trendDataJson);
-                        console.log('Parsed trend data:', trendData);
-                        console.log('Trend data length:', trendData.length);
-                        if (trendData.length > 0) {{
-                            console.log('First data point:', trendData[0]);
-                        }}
-                        openTrendModal(paperIdx, trendData, paperTitle);
-                    }} catch(e) {{
-                        console.error('Error decoding trend data:', e);
-                        console.error('Base64 string length:', trendDataB64 ? trendDataB64.length : 0);
-                        alert('Error loading trend data: ' + e.message);
-                    }}
-                }} else {{
-                    console.error('Missing trend data or title', 'hasTrendData:', !!trendDataB64, 'hasTitle:', !!paperTitle);
-                }}
-            }}
-        }});
-        
-        // Close modal when clicking outside
-        window.onclick = function(event) {{
-            const modal = document.getElementById('trendModal');
-            if (event.target === modal) {{
-                closeTrendModal();
-            }}
-        }}
-        
         // Download Tracking Functions
         function getStorageKey() {{
-            // Extract user_id from the page
+            // Extract author_id from the page
             const profileText = document.querySelector('.header p');
             if (profileText) {{
-                const match = profileText.textContent.match(/Google Scholar Profile: (.+)/);
+                const match = profileText.textContent.match(/Semantic Scholar Profile: (.+)/);
                 if (match && match[1]) {{
                     return 'downloaded_papers_' + match[1].trim();
                 }}
             }}
-            // Fallback to a default key if user_id not found
+            // Fallback to a default key if author_id not found
             return 'downloaded_papers_default';
         }}
         
@@ -1174,19 +758,6 @@ class HTMLGenerator:
             }}
         }});
     </script>
-    
-    <!-- Trend Analysis Modal -->
-    <div id="trendModal" class="trend-modal">
-        <div class="trend-modal-content">
-            <div class="trend-modal-header">
-                <h2 class="trend-modal-title" id="trendModalTitle">Citation Trend</h2>
-                <button class="trend-modal-close" onclick="closeTrendModal()">&times;</button>
-            </div>
-            <div class="trend-chart-container">
-                <canvas id="trendChart"></canvas>
-            </div>
-        </div>
-    </div>
 </body>
 </html>"""
         return html_content
@@ -1219,8 +790,12 @@ class HTMLGenerator:
             download_link = paper.get('download_link', '')
             
             # Format download link
+            # Note: URLs in href attributes should NOT be HTML-escaped
+            # HTML escaping is for text content, not URLs
             if download_link:
-                download_html = f'<a href="{HTMLGenerator._escape_html(download_link)}" target="_blank" class="download-link" data-paper-id="{idx}">Download PDF</a>'
+                # Only escape quotes in the URL to prevent breaking the HTML attribute
+                safe_url = download_link.replace('"', '&quot;').replace("'", '&#39;')
+                download_html = f'<a href="{safe_url}" target="_blank" class="download-link" data-paper-id="{idx}">Download PDF</a>'
             else:
                 download_html = '<span class="no-link">Not found</span>'
             
@@ -1236,19 +811,6 @@ class HTMLGenerator:
             else:
                 citations_html = f'<span class="citations">{HTMLGenerator._escape_html(citations_formatted)}</span>'
             
-            # Format trend analysis button - use data attributes for reliable data passing
-            citation_trend = paper.get('citation_trend', [])
-            if citation_trend and len(citation_trend) > 0:
-                import json
-                import base64
-                trend_data_json = json.dumps(citation_trend)
-                # Use base64 encoding to safely pass JSON in HTML attribute
-                trend_data_encoded = base64.b64encode(trend_data_json.encode('utf-8')).decode('utf-8')
-                title_escaped = HTMLGenerator._escape_html(title)
-                trend_btn = f'<button class="trend-icon-btn" data-trend-b64="{trend_data_encoded}" data-title="{title_escaped}" data-paper-idx="{idx}" title="View Citation Trend">📊</button>'
-            else:
-                trend_btn = '<button class="trend-icon-btn" disabled title="No trend data available">📊</button>'
-            
             row = f"""                    <tr>
                         <td><input type="checkbox" id="paper-{idx}"></td>
                         <td><span class="sr-no">{idx}</span></td>
@@ -1258,7 +820,6 @@ class HTMLGenerator:
                         <td><span class="publication">{publication}</span></td>
                         <td>{citations_html}</td>
                         <td>{doi_html}</td>
-                        <td style="text-align: center; padding: 4px;">{trend_btn}</td>
                         <td>{download_html}</td>
                     </tr>"""
             rows.append(row)
