@@ -34,6 +34,41 @@ app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 app.mount("/artifacts", StaticFiles(directory=ARTIFACT_DIR), name="artifacts")
 
 
+async def _ensure_playwright_browsers():
+    """Ensure Playwright browsers are installed, install if missing."""
+    try:
+        # Check if browsers are installed
+        result = subprocess.run(
+            ["playwright", "install", "--dry-run", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            # Browsers not installed, install them
+            print("[Startup] Installing Playwright browsers...")
+            install_result = subprocess.run(
+                ["playwright", "install", "chromium"],
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout
+            )
+            if install_result.returncode == 0:
+                print("[Startup] ✅ Playwright browsers installed successfully")
+            else:
+                print(f"[Startup] ⚠️  Browser installation failed: {install_result.stderr}")
+        else:
+            print("[Startup] ✅ Playwright browsers already installed")
+    except Exception as exc:
+        print(f"[Startup] ⚠️  Could not check/install browsers: {exc}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Ensure Playwright browsers are installed on startup."""
+    await _ensure_playwright_browsers()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> str:
     return (WEB_DIR / "index.html").read_text(encoding="utf-8")
