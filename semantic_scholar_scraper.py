@@ -176,6 +176,9 @@ class SemanticScholarScraper:
         self._print_progress(0, 100, "📄 Fetching papers")
         all_papers = await self._fetch_author_papers(author_id)
 
+        print(f"\n[DEBUG] 📊 Fetched {len(all_papers)} papers from API")
+        print(f"[DEBUG] 📋 Requested max_papers: {self.max_papers}")
+
         if not all_papers:
             print("\n⚠️  No papers found for this author.")
             return papers
@@ -186,15 +189,30 @@ class SemanticScholarScraper:
             reverse=True,
         )
         selected = all_papers[: self.max_papers]
+        print(f"[DEBUG] ✅ Selected {len(selected)} papers after sorting (max_papers={self.max_papers})")
         self._log(f"Selected top {len(selected)} papers by citations", "SUCCESS")
 
         self._print_progress(30, 100, "📝 Processing papers")
+        processed_count = 0
+        skipped_count = 0
         for idx, paper in enumerate(selected, start=1):
             try:
+                paper_title = getattr(paper, "title", "Unknown") or "Unknown"
+                print(f"\n[DEBUG] 🔄 Processing paper {idx}/{len(selected)}: {paper_title[:60]}...")
                 paper_dict = await self._extract_paper_metadata(paper)
-                if not paper_dict:
+                if paper_dict is None:
+                    print(f"[DEBUG] ⚠️  Paper {idx} returned None, skipping")
+                    skipped_count += 1
+                    continue
+                if not isinstance(paper_dict, dict) or not paper_dict.get('title'):
+                    print(f"[DEBUG] ⚠️  Paper {idx} returned invalid dict (no title), skipping")
+                    print(f"[DEBUG]   Dict contents: {paper_dict}")
+                    skipped_count += 1
                     continue
                 papers.append(paper_dict)
+                processed_count += 1
+                print(f"[DEBUG] ✅ Paper {idx} processed successfully (processed: {processed_count}, skipped: {skipped_count})")
+                print(f"[DEBUG]   Title: {paper_dict.get('title', 'N/A')[:50]}...")
                 if self.collect_debug:
                     self.debug_records.append(
                         {
@@ -207,7 +225,11 @@ class SemanticScholarScraper:
                         }
                     )
             except Exception as exc:  # pylint: disable=broad-except
+                print(f"[DEBUG] ❌ Exception processing paper {idx}: {exc}")
+                import traceback
+                print(f"[DEBUG] Traceback: {traceback.format_exc()}")
                 self._log(f"Error processing paper {idx}: {exc}", "WARN")
+                skipped_count += 1
                 if self.collect_debug:
                     self.debug_records.append(
                         {
@@ -223,6 +245,12 @@ class SemanticScholarScraper:
                 self._print_progress(30 + int((idx / len(selected)) * 60), 100, "📝 Processing papers")
 
         self.stats["papers_found"] = len(papers)
+        print(f"\n[DEBUG] 📈 Final Summary:")
+        print(f"[DEBUG]   - Papers fetched from API: {len(all_papers)}")
+        print(f"[DEBUG]   - Papers selected for processing: {len(selected)}")
+        print(f"[DEBUG]   - Papers successfully processed: {processed_count}")
+        print(f"[DEBUG]   - Papers skipped: {skipped_count}")
+        print(f"[DEBUG]   - Final papers count: {len(papers)}")
         print(f"\n✓ Successfully processed {len(papers)} papers (sorted by citations).\n")
         self._print_progress(100, 100, "Completed")
         return papers
@@ -264,6 +292,8 @@ class SemanticScholarScraper:
             "title",
             "year",
             "venue",
+            "journal",  # Add this (may not exist in all API versions)
+            "publicationVenue",  # Add this (may not exist in all API versions)
             "citationCount",
             "authors",
             "externalIds",
@@ -279,11 +309,55 @@ class SemanticScholarScraper:
                 limit=fetch_limit,
             )
             papers: List = []
-            # PaginatedResults has .items attribute
-            if hasattr(results, 'items'):
-                papers = list(results.items)
+            
+            # Debug: inspect the results object
+            print(f"[DEBUG] Results type: {type(results)}")
+            print(f"[DEBUG] Results attributes: {[x for x in dir(results) if not x.startswith('_')]}")
+            if hasattr(results, 'total'):
+                print(f"[DEBUG] Results.total: {results.total}")
+            if hasattr(results, 'offset'):
+                print(f"[DEBUG] Results.offset: {results.offset}")
+            if hasattr(results, 'limit'):
+                print(f"[DEBUG] Results.limit: {results.limit}")
+            
+            # Try multiple ways to extract papers from PaginatedResults
+            if hasattr(results, 'data'):
+                # Some versions use .data
+                try:
+                    papers = list(results.data) if results.data else []
+                    print(f"[DEBUG] ✅ Extracted {len(papers)} papers from .data attribute")
+                except Exception as e:
+                    print(f"[DEBUG] ❌ Error extracting from .data: {e}")
+            elif hasattr(results, 'items'):
+                # Some versions use .items
+                try:
+                    papers = list(results.items) if results.items else []
+                    print(f"[DEBUG] ✅ Extracted {len(papers)} papers from .items attribute")
+                except Exception as e:
+                    print(f"[DEBUG] ❌ Error extracting from .items: {e}")
             elif hasattr(results, '__iter__'):
-                papers = list(results)
+                # Try direct iteration
+                try:
+                    papers = list(results)
+                    print(f"[DEBUG] ✅ Extracted {len(papers)} papers via iteration")
+                except Exception as iter_exc:
+                    print(f"[DEBUG] ❌ Iteration failed: {iter_exc}")
+                    papers = []
+            
+            # If still no papers, try to get them manually
+            if not papers:
+                print(f"[DEBUG] ⚠️  No papers extracted, trying alternative methods...")
+                # Try accessing as a list/dict
+                if isinstance(results, (list, tuple)):
+                    papers = list(results)
+                    print(f"[DEBUG] ✅ Results is list/tuple, extracted {len(papers)} papers")
+                elif isinstance(results, dict) and 'data' in results:
+                    papers = results['data']
+                    print(f"[DEBUG] ✅ Results is dict with 'data' key, extracted {len(papers)} papers")
+            
+            print(f"[DEBUG] Final papers count from collect(): {len(papers)}")
+            if papers:
+                print(f"[DEBUG] First paper title: {getattr(papers[0], 'title', 'N/A')[:60] if papers else 'N/A'}")
             return papers
 
         attempts = len(self.RATE_LIMIT_BACKOFF) + 1
@@ -292,6 +366,8 @@ class SemanticScholarScraper:
                 papers = await asyncio.to_thread(collect)
                 self.stats["api_calls"] += 1
                 
+                print(f"[DEBUG] 🔍 API returned {len(papers)} papers (fetch_limit was {fetch_limit}, target_count is {target_count})")
+                
                 # Sort by citation count descending to get top-cited papers
                 papers.sort(
                     key=lambda paper: getattr(paper, "citationCount", 0) or 0,
@@ -299,7 +375,9 @@ class SemanticScholarScraper:
                 )
                 
                 # Return the top papers up to target_count
-                return papers[:target_count]
+                result = papers[:target_count]
+                print(f"[DEBUG] 📦 Returning {len(result)} papers (limited to target_count={target_count})")
+                return result
             except SemanticScholarException as exc:
                 status = getattr(exc, "status", None)
                 if status == 429 and attempt < len(self.RATE_LIMIT_BACKOFF):
@@ -1024,7 +1102,41 @@ class SemanticScholarScraper:
                 for author in getattr(paper, "authors", []) or []
             )
             year = str(getattr(paper, "year", "") or "")
-            publication = getattr(paper, "venue", "") or ""
+            
+            # Extract publication - handle both string and object types
+            publication = ""
+            # Try venue first
+            venue_val = getattr(paper, "venue", None)
+            if venue_val:
+                if isinstance(venue_val, str):
+                    publication = venue_val
+                elif hasattr(venue_val, "name"):
+                    publication = str(getattr(venue_val, "name", ""))
+                else:
+                    publication = str(venue_val)
+            
+            # Try journal if venue didn't work
+            if not publication:
+                journal_val = getattr(paper, "journal", None)
+                if journal_val:
+                    if isinstance(journal_val, str):
+                        publication = journal_val
+                    elif hasattr(journal_val, "name"):
+                        publication = str(getattr(journal_val, "name", ""))
+                    else:
+                        publication = str(journal_val)
+            
+            # Try publicationVenue if still no publication
+            if not publication:
+                pub_venue_val = getattr(paper, "publicationVenue", None)
+                if pub_venue_val:
+                    if isinstance(pub_venue_val, str):
+                        publication = pub_venue_val
+                    elif hasattr(pub_venue_val, "name"):
+                        publication = str(getattr(pub_venue_val, "name", ""))
+                    else:
+                        publication = str(pub_venue_val)
+            
             citations = str(getattr(paper, "citationCount", "") or "0")
 
             doi = ""
@@ -1037,52 +1149,64 @@ class SemanticScholarScraper:
                 print(f"[Paper Processing] 🔖 DOI found: {doi}")
                 self.stats["doi_found"] += 1
 
+            # PDF extraction - wrap in try-catch so failures don't skip the entire paper
             download_link = ""
-            open_access_pdf = getattr(paper, "openAccessPdf", None)
+            paper_id = getattr(paper, "paperId", "")
             
-            print(f"[Paper Processing] 📥 Checking openAccessPdf from API...")
-            # Debug: log what we're getting
-            if open_access_pdf:
-                print(f"[Paper Processing] ✅ openAccessPdf present: {type(open_access_pdf)}")
-                if self.verbose:
-                    self._log(f"openAccessPdf type: {type(open_access_pdf)}, value: {open_access_pdf}", "DEBUG")
-            else:
-                print(f"[Paper Processing] ❌ No openAccessPdf in API response")
-            
-            if open_access_pdf:
-                # Handle both dict and object cases
-                if isinstance(open_access_pdf, dict):
-                    download_link = open_access_pdf.get("url", "") or ""
-                elif hasattr(open_access_pdf, "url"):
-                    download_link = getattr(open_access_pdf, "url", "") or ""
-                elif isinstance(open_access_pdf, str):
-                    # Sometimes it might be a direct URL string
-                    download_link = open_access_pdf
+            try:
+                open_access_pdf = getattr(paper, "openAccessPdf", None)
                 
-                # Only count if we have a non-empty URL
-                if download_link and download_link.strip():
-                    print(f"[Paper Processing] 🔗 openAccessPdf URL: {download_link[:70]}...")
-                    # Validate the link before counting it
-                    is_valid = await self._validate_pdf_link(download_link)
-                    print(f"[Paper Processing] ✓ Validation result: {'VALID' if is_valid else 'INVALID'}")
-                    if is_valid:
-                        print(f"[Paper Processing] ✅ Using openAccessPdf URL")
-                        self.stats["download_links_found"] += 1
-                    else:
-                        # Link is dead/invalid, reset to empty
-                        print(f"[Paper Processing] ❌ openAccessPdf URL failed validation, trying alternatives...")
-                        if self.verbose:
-                            self._log(f"openAccessPdf URL failed validation: {download_link[:60]}...", "DEBUG")
-                        download_link = ""
-                else:
-                    # Reset to empty string if URL is empty/missing
-                    download_link = ""
-                    print(f"[Paper Processing] ⚠️  openAccessPdf present but URL is empty, trying alternatives...")
+                print(f"[Paper Processing] 📥 Checking openAccessPdf from API...")
+                # Debug: log what we're getting
+                if open_access_pdf:
+                    print(f"[Paper Processing] ✅ openAccessPdf present: {type(open_access_pdf)}")
                     if self.verbose:
-                        self._log(f"openAccessPdf present but URL is empty. Status: {open_access_pdf.get('status', 'N/A') if isinstance(open_access_pdf, dict) else 'N/A'}", "DEBUG")
+                        self._log(f"openAccessPdf type: {type(open_access_pdf)}, value: {open_access_pdf}", "DEBUG")
+                else:
+                    print(f"[Paper Processing] ❌ No openAccessPdf in API response")
+                
+                if open_access_pdf:
+                    # Handle both dict and object cases
+                    if isinstance(open_access_pdf, dict):
+                        download_link = open_access_pdf.get("url", "") or ""
+                    elif hasattr(open_access_pdf, "url"):
+                        download_link = getattr(open_access_pdf, "url", "") or ""
+                    elif isinstance(open_access_pdf, str):
+                        # Sometimes it might be a direct URL string
+                        download_link = open_access_pdf
+                    
+                    # Only count if we have a non-empty URL
+                    if download_link and download_link.strip():
+                        print(f"[Paper Processing] 🔗 openAccessPdf URL: {download_link[:70]}...")
+                        # Validate the link before counting it
+                        try:
+                            is_valid = await self._validate_pdf_link(download_link)
+                            print(f"[Paper Processing] ✓ Validation result: {'VALID' if is_valid else 'INVALID'}")
+                            if is_valid:
+                                print(f"[Paper Processing] ✅ Using openAccessPdf URL")
+                                self.stats["download_links_found"] += 1
+                            else:
+                                # Link is dead/invalid, reset to empty
+                                print(f"[Paper Processing] ❌ openAccessPdf URL failed validation, trying alternatives...")
+                                if self.verbose:
+                                    self._log(f"openAccessPdf URL failed validation: {download_link[:60]}...", "DEBUG")
+                                download_link = ""
+                        except Exception as val_exc:
+                            print(f"[Paper Processing] ⚠️  Validation error: {val_exc}, trying alternatives...")
+                            download_link = ""
+                    else:
+                        # Reset to empty string if URL is empty/missing
+                        download_link = ""
+                        print(f"[Paper Processing] ⚠️  openAccessPdf present but URL is empty, trying alternatives...")
+                        if self.verbose:
+                            self._log(f"openAccessPdf present but URL is empty. Status: {open_access_pdf.get('status', 'N/A') if isinstance(open_access_pdf, dict) else 'N/A'}", "DEBUG")
+            except Exception as pdf_exc:
+                print(f"[Paper Processing] ⚠️  Error in initial PDF extraction: {pdf_exc}, continuing with alternatives...")
+                if self.verbose:
+                    self._log(f"Error in initial PDF extraction: {pdf_exc}", "DEBUG")
+                download_link = ""
             
             # If no PDF link found, try fetching full paper details for alternate sources
-            paper_id = getattr(paper, "paperId", "")
             if not download_link and paper_id:
                 try:
                     # Fetch full paper details which may include alternate PDF sources
@@ -1105,14 +1229,14 @@ class SemanticScholarScraper:
                         
                         if full_url and full_url.strip():
                             # Validate the link before using it
-                            if await self._validate_pdf_link(full_url):
-                                download_link = full_url
-                                self.stats["download_links_found"] += 1
-                                if self.verbose:
-                                    self._log(f"Found valid PDF link from full paper details: {full_url[:60]}...", "SUCCESS")
-                            else:
-                                if self.verbose:
-                                    self._log(f"PDF link from full paper details failed validation: {full_url[:60]}...", "DEBUG")
+                            try:
+                                if await self._validate_pdf_link(full_url):
+                                    download_link = full_url
+                                    self.stats["download_links_found"] += 1
+                                    if self.verbose:
+                                        self._log(f"Found valid PDF link from full paper details: {full_url[:60]}...", "SUCCESS")
+                            except Exception:
+                                pass
                 except Exception as exc:
                     # Silently fail - alternate source fetch is optional
                     if self.verbose:
@@ -1120,55 +1244,168 @@ class SemanticScholarScraper:
             
             # Phase 3: Try arXiv PDF conversion (fast, no API calls)
             if not download_link:
-                print(f"[PDF Extraction] 🔬 Trying arXiv extraction for {paper_id}")
-                arxiv_pdf = await self._extract_arxiv_pdf(paper)
-                if arxiv_pdf:
-                    print(f"[PDF Extraction] ✅ Found arXiv PDF: {arxiv_pdf[:60]}...")
-                    download_link = arxiv_pdf
-                    self.stats["download_links_found"] += 1
-                else:
-                    print(f"[PDF Extraction] ❌ No arXiv PDF found for {paper_id}")
+                try:
+                    print(f"[PDF Extraction] 🔬 Trying arXiv extraction for {paper_id}")
+                    arxiv_pdf = await self._extract_arxiv_pdf(paper)
+                    if arxiv_pdf:
+                        print(f"[PDF Extraction] ✅ Found arXiv PDF: {arxiv_pdf[:60]}...")
+                        download_link = arxiv_pdf
+                        self.stats["download_links_found"] += 1
+                    else:
+                        print(f"[PDF Extraction] ❌ No arXiv PDF found for {paper_id}")
+                except Exception as arxiv_exc:
+                    print(f"[PDF Extraction] ⚠️  Error in arXiv extraction: {arxiv_exc}")
             
-            # Phase 3: Try DOI-based PDF (skip if arXiv found)
+            # Phase 4: Try DOI-based PDF (skip if arXiv found)
             if not download_link:
-                print(f"[PDF Extraction] 🔍 Trying Unpaywall/DOI extraction for {paper_id}")
-                doi_pdf = await self._extract_doi_pdf(paper)
-                if doi_pdf:
-                    print(f"[PDF Extraction] ✅ Found PDF via DOI: {doi_pdf[:60]}...")
-                    download_link = doi_pdf
-                    self.stats["download_links_found"] += 1
-                else:
-                    print(f"[PDF Extraction] ❌ No PDF found via DOI for {paper_id}")
+                try:
+                    print(f"[PDF Extraction] 🔍 Trying Unpaywall/DOI extraction for {paper_id}")
+                    doi_pdf = await self._extract_doi_pdf(paper)
+                    if doi_pdf:
+                        print(f"[PDF Extraction] ✅ Found PDF via DOI: {doi_pdf[:60]}...")
+                        download_link = doi_pdf
+                        self.stats["download_links_found"] += 1
+                    else:
+                        print(f"[PDF Extraction] ❌ No PDF found via DOI for {paper_id}")
+                except Exception as doi_exc:
+                    print(f"[PDF Extraction] ⚠️  Error in DOI extraction: {doi_exc}")
             
             # Fallback: If still no PDF link, scrape Semantic Scholar page for alternate sources
             if not download_link and paper_id:
-                print(f"[PDF Extraction] 🌐 Trying Playwright scraping for {paper_id}")
-                pdf_from_page = await self._extract_pdf_from_paper_page(paper_id, title)
-                if pdf_from_page:
-                    print(f"[PDF Extraction] ✅ Found PDF via Playwright: {pdf_from_page[:60]}...")
-                    download_link = pdf_from_page
-                    self.stats["download_links_found"] += 1
-                    if self.verbose:
-                        self._log(f"Found PDF from paper page scraping: {pdf_from_page[:60]}...", "SUCCESS")
-                else:
-                    print(f"[PDF Extraction] ❌ Playwright found no PDF for {paper_id}, using Semantic Scholar page link")
-                    # Final fallback: link to Semantic Scholar paper page with proper title slug
+                try:
+                    print(f"[PDF Extraction] 🌐 Trying Playwright scraping for {paper_id}")
+                    pdf_from_page = await self._extract_pdf_from_paper_page(paper_id, title)
+                    if pdf_from_page:
+                        print(f"[PDF Extraction] ✅ Found PDF via Playwright: {pdf_from_page[:60]}...")
+                        download_link = pdf_from_page
+                        self.stats["download_links_found"] += 1
+                        if self.verbose:
+                            self._log(f"Found PDF from paper page scraping: {pdf_from_page[:60]}...", "SUCCESS")
+                    else:
+                        print(f"[PDF Extraction] ❌ Playwright found no PDF for {paper_id}, using Semantic Scholar page link")
+                        # Final fallback: link to Semantic Scholar paper page with proper title slug
+                        download_link = self._create_semantic_scholar_url(paper_id, title)
+                        if self.verbose:
+                            self._log(f"Using fallback link to Semantic Scholar paper page for {paper_id}", "DEBUG")
+                except Exception as playwright_exc:
+                    print(f"[PDF Extraction] ⚠️  Error in Playwright extraction: {playwright_exc}, using Semantic Scholar page link")
+                    # Final fallback: link to Semantic Scholar paper page
                     download_link = self._create_semantic_scholar_url(paper_id, title)
-                    if self.verbose:
-                        self._log(f"Using fallback link to Semantic Scholar paper page for {paper_id}", "DEBUG")
 
+            # Ensure we have at least a title - if not, try to get it from paper object
+            if not title or not title.strip():
+                print(f"[Paper Processing] ⚠️  Title missing, trying to get from paper object...")
+                title = getattr(paper, "title", "") or ""
+                if not title or not title.strip():
+                    self._log(f"Paper missing title, skipping: {paper_id}", "WARN")
+                    print(f"[Paper Processing] ❌ Paper {paper_id} has no title, skipping")
+                    return None
+            
+            # Ensure publication is a string (it should be after our extraction, but double-check)
+            if not isinstance(publication, str):
+                publication = str(publication) if publication else ""
+            
+            print(f"[Paper Processing] ✅ Successfully extracted metadata for: {title[:50]}...")
             return {
                 "title": title.strip(),
                 "authors": authors.strip(),
                 "year": year.strip(),
-                "publication": publication.strip(),
+                "publication": publication.strip() if publication else "",
                 "citations": citations,
                 "citation_trend": [],
                 "doi": doi,
                 "download_link": download_link,
             }
         except Exception as exc:
-            self._log(f"Error extracting paper metadata: {exc}", "ERROR")
+            # Only log critical errors - don't skip paper unless it's truly invalid
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"[Paper Processing] ❌ Exception in _extract_paper_metadata: {exc}")
+            print(f"[Paper Processing] Traceback: {error_details[:500]}")
+            self._log(f"Critical error extracting paper metadata: {exc}", "ERROR")
+            if self.verbose:
+                self._log(f"Error details: {error_details}", "DEBUG")
+            # Try to return basic paper info even if PDF extraction failed
+            try:
+                print(f"[Paper Processing] 🔄 Attempting fallback extraction...")
+                paper_id_fallback = getattr(paper, "paperId", "") or ""
+                title_fallback = getattr(paper, "title", "") or ""
+                print(f"[Paper Processing] Fallback - Paper ID: {paper_id_fallback}, Title: {title_fallback[:50] if title_fallback else 'None'}...")
+                
+                if not title_fallback or not title_fallback.strip():
+                    print(f"[Paper Processing] ❌ Fallback: No title found, skipping paper")
+                    return None
+                
+                # Return paper with minimal info - better than skipping entirely
+                authors_fallback = ", ".join(
+                    author.name if hasattr(author, "name") else str(author)
+                    for author in getattr(paper, "authors", []) or []
+                )
+                year_fallback = str(getattr(paper, "year", "") or "")
+                # Extract publication - handle both string and object types
+                publication_fallback = ""
+                venue_val_fallback = getattr(paper, "venue", None)
+                if venue_val_fallback:
+                    if isinstance(venue_val_fallback, str):
+                        publication_fallback = venue_val_fallback
+                    elif hasattr(venue_val_fallback, "name"):
+                        publication_fallback = str(getattr(venue_val_fallback, "name", ""))
+                    else:
+                        publication_fallback = str(venue_val_fallback)
+                
+                if not publication_fallback:
+                    journal_val_fallback = getattr(paper, "journal", None)
+                    if journal_val_fallback:
+                        if isinstance(journal_val_fallback, str):
+                            publication_fallback = journal_val_fallback
+                        elif hasattr(journal_val_fallback, "name"):
+                            publication_fallback = str(getattr(journal_val_fallback, "name", ""))
+                        else:
+                            publication_fallback = str(journal_val_fallback)
+                
+                if not publication_fallback:
+                    pub_venue_val_fallback = getattr(paper, "publicationVenue", None)
+                    if pub_venue_val_fallback:
+                        if isinstance(pub_venue_val_fallback, str):
+                            publication_fallback = pub_venue_val_fallback
+                        elif hasattr(pub_venue_val_fallback, "name"):
+                            publication_fallback = str(getattr(pub_venue_val_fallback, "name", ""))
+                        else:
+                            publication_fallback = str(pub_venue_val_fallback)
+                
+                # Ensure publication_fallback is a string
+                if not isinstance(publication_fallback, str):
+                    publication_fallback = str(publication_fallback) if publication_fallback else ""
+                
+                citations_fallback = str(getattr(paper, "citationCount", "") or "0")
+                doi_fallback = ""
+                external_ids_fallback = getattr(paper, "externalIds", {}) or {}
+                if isinstance(external_ids_fallback, dict):
+                    doi_fallback = external_ids_fallback.get("DOI", "") or ""
+                
+                # Use Semantic Scholar page as fallback download link
+                try:
+                    download_link_fallback = self._create_semantic_scholar_url(paper_id_fallback, title_fallback) if paper_id_fallback else ""
+                except Exception:
+                    download_link_fallback = ""
+                
+                print(f"[Paper Processing] ✅ Fallback extraction successful, returning paper with minimal metadata")
+                self._log(f"Returning paper with minimal metadata after error: {title_fallback[:50]}...", "WARN")
+                return {
+                    "title": title_fallback.strip(),
+                    "authors": authors_fallback.strip(),
+                    "year": year_fallback.strip(),
+                    "publication": publication_fallback.strip() if publication_fallback else "",
+                    "citations": citations_fallback,
+                    "citation_trend": [],
+                    "doi": doi_fallback,
+                    "download_link": download_link_fallback,
+                }
+            except Exception as fallback_exc:
+                # If even basic extraction fails, skip this paper
+                print(f"[Paper Processing] ❌ Fallback extraction also failed: {fallback_exc}")
+                import traceback
+                print(f"[Paper Processing] Fallback traceback: {traceback.format_exc()[:500]}")
             return None
 
     def build_debug_report(self, user_id: Optional[str] = None) -> Dict:

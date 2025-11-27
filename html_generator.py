@@ -289,6 +289,17 @@ class HTMLGenerator:
             overflow: hidden;
         }}
         
+        th:nth-child(10) {{
+            width: 120px;
+            text-align: center;
+            white-space: normal;
+        }}
+        
+        td:nth-child(10) {{
+            text-align: center;
+            padding: 8px;
+        }}
+        
         tbody tr {{
             border-bottom: 1px solid #e8e8e8;
             transition: all 0.2s ease;
@@ -386,14 +397,21 @@ class HTMLGenerator:
         }}
         
         .doi {{
-            color: #1a1a1a;
+            color: #2563eb;
             font-family: 'Courier New', monospace;
             font-size: 0.85em;
             word-break: break-all;
+            text-decoration: underline;
+            cursor: pointer;
             background: #f5f5f5;
             padding: 4px 8px;
             border-radius: 4px;
             border: 1px solid #e8e8e8;
+        }}
+        
+        .doi:hover {{
+            color: #1d4ed8;
+            text-decoration: underline;
         }}
         
         .download-link {{
@@ -415,14 +433,14 @@ class HTMLGenerator:
             box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
         }}
         
-        .download-link.downloaded {{
+        .download-link.accessed {{
             color: #2563eb;
             background: linear-gradient(135deg, #dbeafe, #bfdbfe);
             border: 1px solid #3b82f6;
             white-space: nowrap;
         }}
         
-        .download-link.downloaded:hover {{
+        .download-link.accessed:hover {{
             background: linear-gradient(135deg, #bfdbfe, #93c5fd);
             box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
         }}
@@ -521,7 +539,7 @@ class HTMLGenerator:
                 <strong>Checked:</strong> <span id="checked-count">0</span>
             </div>
             <div class="button-group">
-                <button class="btn-select-all" onclick="selectAll()">✓ Select All</button>
+                <button class="btn-select-all" onclick="selectAll()">✓ Select All for Export</button>
                 <button class="btn-deselect-all" onclick="deselectAll()">✗ Deselect All</button>
                 <button class="btn-export" onclick="exportChecked()">📥 Export Checked</button>
                 <button class="btn-clear-history" onclick="clearDownloadHistory()">🗑️ Clear Download History</button>
@@ -532,7 +550,7 @@ class HTMLGenerator:
             <table>
                 <thead>
                     <tr>
-                        <th>✓</th>
+                        <th title="Select papers to include in CSV export">✓ Select</th>
                         <th>Sr. No</th>
                         <th>Title</th>
                         <th>Authors</th>
@@ -541,6 +559,7 @@ class HTMLGenerator:
                         <th>Citations</th>
                         <th>DOI</th>
                         <th>Download Link</th>
+                        <th>Download Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -555,9 +574,28 @@ class HTMLGenerator:
     </div>
     
     <script>
+        // Error display function
+        function showError(message) {{
+            // Create or update error banner
+            let errorBanner = document.getElementById('error-banner');
+            if (!errorBanner) {{
+                errorBanner = document.createElement('div');
+                errorBanner.id = 'error-banner';
+                errorBanner.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #ef4444; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000; max-width: 400px;';
+                document.body.appendChild(errorBanner);
+            }}
+            errorBanner.textContent = message;
+            errorBanner.style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {{
+                errorBanner.style.display = 'none';
+            }}, 5000);
+        }}
+        
         // Update checked count
         function updateCheckedCount() {{
-            const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]');
+            const checkboxes = document.querySelectorAll('tbody td:first-child input[type="checkbox"]');
             const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
             document.getElementById('checked-count').textContent = checked;
             
@@ -574,132 +612,207 @@ class HTMLGenerator:
         
         // Select all checkboxes
         function selectAll() {{
-            const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]');
+            const checkboxes = document.querySelectorAll('tbody td:first-child input[type="checkbox"]');
             checkboxes.forEach(cb => cb.checked = true);
             updateCheckedCount();
         }}
         
         // Deselect all checkboxes
         function deselectAll() {{
-            const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]');
+            const checkboxes = document.querySelectorAll('tbody td:first-child input[type="checkbox"]');
             checkboxes.forEach(cb => cb.checked = false);
             updateCheckedCount();
         }}
         
         // Export checked papers to CSV
         function exportChecked() {{
-            const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]');
-            const checkedPapers = [];
-            
-            checkboxes.forEach((checkbox, index) => {{
-                if (checkbox.checked) {{
-                    const row = checkbox.closest('tr');
-                    const cells = row.querySelectorAll('td');
-                    
-                    checkedPapers.push({{
-                        srNo: cells[1].textContent.trim(),
-                        title: cells[2].textContent.trim(),
-                        authors: cells[3].textContent.trim(),
-                        year: cells[4].textContent.trim(),
-                        publication: cells[5].textContent.trim(),
-                        citations: cells[6].textContent.trim(),
-                        doi: cells[7].textContent.trim(),
-                        downloadLink: cells[8].querySelector('a') ? cells[8].querySelector('a').href : ''
-                    }});
+            try {{
+                const selectionCheckboxes = document.querySelectorAll('tbody td:first-child input[type="checkbox"]');
+                const checkedPapers = [];
+                
+                selectionCheckboxes.forEach((checkbox) => {{
+                    if (checkbox.checked) {{
+                        const row = checkbox.closest('tr');
+                        const cells = row.querySelectorAll('td');
+                        const downloadStatusCheckbox = row.querySelector('.download-status-checkbox');
+                        
+                        checkedPapers.push({{
+                            srNo: cells[1].textContent.trim(),
+                            title: cells[2].textContent.trim(),
+                            authors: cells[3].textContent.trim(),
+                            year: cells[4].textContent.trim(),
+                            publication: cells[5].textContent.trim(),
+                            citations: cells[6].textContent.trim(),
+                            doi: cells[7].querySelector('a') ? cells[7].querySelector('a').textContent.trim() : cells[7].textContent.trim(),
+                            downloadLink: cells[8].querySelector('a') ? cells[8].querySelector('a').href : '',
+                            downloadStatus: downloadStatusCheckbox ? downloadStatusCheckbox.checked : false
+                        }});
+                    }}
+                }});
+                
+                if (checkedPapers.length === 0) {{
+                    alert('No papers selected. Please select at least one paper.');
+                    return;
                 }}
-            }});
-            
-            if (checkedPapers.length === 0) {{
-                alert('No papers selected. Please select at least one paper.');
-                return;
+                
+                // Convert to CSV
+                const headers = ['Sr. No', 'Title', 'Authors', 'Year', 'Publication', 'Citations', 'DOI', 'Download Link', 'Download Status'];
+                const csvRows = [
+                    headers.join(','),
+                    ...checkedPapers.map(p => [
+                        `"${{p.srNo}}"`,
+                        `"${{p.title.replace(/"/g, '""')}}"`,
+                        `"${{p.authors.replace(/"/g, '""')}}"`,
+                        `"${{p.year}}"`,
+                        `"${{p.publication.replace(/"/g, '""')}}"`,
+                        `"${{p.citations}}"`,
+                        `"${{p.doi}}"`,
+                        `"${{p.downloadLink}}"`,
+                        `"${{p.downloadStatus ? 'Yes' : 'No'}}"`
+                    ].join(','))
+                ];
+                
+                const csvContent = csvRows.join('\\n');
+                const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'checked_papers.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }} catch (error) {{
+                showError('Error exporting CSV: ' + error.message);
+                console.error('Export error:', error);
             }}
-            
-            // Convert to CSV
-            const headers = ['Sr. No', 'Title', 'Authors', 'Year', 'Publication', 'Citations', 'DOI', 'Download Link'];
-            const csvRows = [
-                headers.join(','),
-                ...checkedPapers.map(p => [
-                    `"${{p.srNo}}"`,
-                    `"${{p.title.replace(/"/g, '""')}}"`,
-                    `"${{p.authors.replace(/"/g, '""')}}"`,
-                    `"${{p.year}}"`,
-                    `"${{p.publication.replace(/"/g, '""')}}"`,
-                    `"${{p.citations}}"`,
-                    `"${{p.doi}}"`,
-                    `"${{p.downloadLink}}"`
-                ].join(','))
-            ];
-            
-            const csvContent = csvRows.join('\\n');
-            const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'checked_papers.csv');
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+        }}
+        
+        // Download Status Functions
+        function getDownloadStatusStorageKey() {{
+            const profileText = document.querySelector('.header p');
+            if (profileText) {{
+                const match = profileText.textContent.match(/Semantic Scholar Profile: (.+)/);
+                if (match && match[1]) {{
+                    return 'download_status_' + match[1].trim();
+                }}
+            }}
+            return 'download_status_default';
+        }}
+        
+        function saveDownloadStatus(paperId, isChecked) {{
+            try {{
+                const storageKey = getDownloadStatusStorageKey();
+                let downloadStatuses = {{}};
+                const stored = localStorage.getItem(storageKey);
+                if (stored) {{
+                    try {{
+                        downloadStatuses = JSON.parse(stored);
+                    }} catch(e) {{
+                        console.error('Error parsing download status data:', e);
+                        showError('Error parsing download status data');
+                    }}
+                }}
+                downloadStatuses[paperId] = isChecked;
+                localStorage.setItem(storageKey, JSON.stringify(downloadStatuses));
+            }} catch(e) {{
+                console.error('Error saving download status:', e);
+                showError('Error saving download status: ' + e.message);
+            }}
+        }}
+        
+        function restoreDownloadStatus() {{
+            try {{
+                const storageKey = getDownloadStatusStorageKey();
+                const stored = localStorage.getItem(storageKey);
+                if (!stored) {{
+                    return;
+                }}
+                const downloadStatuses = JSON.parse(stored);
+                const checkboxes = document.querySelectorAll('.download-status-checkbox');
+                checkboxes.forEach(checkbox => {{
+                    const paperId = checkbox.getAttribute('data-paper-id');
+                    if (downloadStatuses[paperId]) {{
+                        checkbox.checked = true;
+                    }}
+                }});
+            }} catch(e) {{
+                console.error('Error restoring download status:', e);
+                showError('Error restoring download status: ' + e.message);
+            }}
         }}
         
         // Add event listeners to all checkboxes and restore download state
         document.addEventListener('DOMContentLoaded', function() {{
-            const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {{
+            const selectionCheckboxes = document.querySelectorAll('tbody td:first-child input[type="checkbox"]');
+            selectionCheckboxes.forEach(checkbox => {{
                 checkbox.addEventListener('change', updateCheckedCount);
             }});
+            
+            // Add event listeners for download status checkboxes
+            const downloadStatusCheckboxes = document.querySelectorAll('.download-status-checkbox');
+            downloadStatusCheckboxes.forEach(checkbox => {{
+                checkbox.addEventListener('change', function() {{
+                    const paperId = this.getAttribute('data-paper-id');
+                    saveDownloadStatus(paperId, this.checked);
+                }});
+            }});
+            
             updateCheckedCount();
-            restoreDownloadedState();
+            restoreAccessedState();
+            restoreDownloadStatus();
         }});
         
-        // Download Tracking Functions
+        // Access Tracking Functions
         function getStorageKey() {{
             // Extract author_id from the page
             const profileText = document.querySelector('.header p');
             if (profileText) {{
                 const match = profileText.textContent.match(/Semantic Scholar Profile: (.+)/);
                 if (match && match[1]) {{
-                    return 'downloaded_papers_' + match[1].trim();
+                    return 'accessed_papers_' + match[1].trim();
                 }}
             }}
             // Fallback to a default key if author_id not found
-            return 'downloaded_papers_default';
+            return 'accessed_papers_default';
         }}
         
-        function markAsDownloaded(paperId) {{
+        function markAsAccessed(paperId) {{
             try {{
                 const storageKey = getStorageKey();
-                let downloadedPapers = {{}};
+                let accessedPapers = {{}};
                 
-                // Get existing downloaded papers from localStorage
+                // Get existing accessed papers from localStorage
                 const stored = localStorage.getItem(storageKey);
                 if (stored) {{
                     try {{
-                        downloadedPapers = JSON.parse(stored);
+                        accessedPapers = JSON.parse(stored);
                     }} catch(e) {{
-                        console.error('Error parsing stored download data:', e);
+                        console.error('Error parsing stored access data:', e);
+                        showError('Error parsing access data');
                     }}
                 }}
                 
-                // Mark this paper as downloaded
-                downloadedPapers[paperId] = true;
+                // Mark this paper as accessed
+                accessedPapers[paperId] = true;
                 
                 // Save back to localStorage
-                localStorage.setItem(storageKey, JSON.stringify(downloadedPapers));
+                localStorage.setItem(storageKey, JSON.stringify(accessedPapers));
                 
                 // Update the link appearance
                 const link = document.querySelector('.download-link[data-paper-id="' + paperId + '"]');
                 if (link) {{
-                    link.classList.add('downloaded');
-                    link.textContent = 'Downloaded ✓';
+                    link.classList.add('accessed');
+                    link.textContent = 'Accessed ✓';
                 }}
             }} catch(e) {{
-                console.error('Error marking paper as downloaded:', e);
+                console.error('Error marking paper as accessed:', e);
+                showError('Error tracking access: ' + e.message);
                 // Handle localStorage quota exceeded or other errors gracefully
             }}
         }}
         
-        function restoreDownloadedState() {{
+        function restoreAccessedState() {{
             try {{
                 const storageKey = getStorageKey();
                 const stored = localStorage.getItem(storageKey);
@@ -708,25 +821,26 @@ class HTMLGenerator:
                     return;
                 }}
                 
-                const downloadedPapers = JSON.parse(stored);
+                const accessedPapers = JSON.parse(stored);
                 
-                // Restore state for each downloaded paper
-                for (const paperId in downloadedPapers) {{
-                    if (downloadedPapers[paperId]) {{
+                // Restore state for each accessed paper
+                for (const paperId in accessedPapers) {{
+                    if (accessedPapers[paperId]) {{
                         const link = document.querySelector('.download-link[data-paper-id="' + paperId + '"]');
                         if (link) {{
-                            link.classList.add('downloaded');
-                            link.textContent = 'Downloaded ✓';
+                            link.classList.add('accessed');
+                            link.textContent = 'Accessed ✓';
                         }}
                     }}
                 }}
             }} catch(e) {{
-                console.error('Error restoring downloaded state:', e);
+                console.error('Error restoring accessed state:', e);
+                showError('Error restoring access state: ' + e.message);
             }}
         }}
         
         function clearDownloadHistory() {{
-            if (!confirm('Are you sure you want to clear all download history? This action cannot be undone.')) {{
+            if (!confirm('Are you sure you want to clear all access history? This action cannot be undone.')) {{
                 return;
             }}
             
@@ -734,27 +848,32 @@ class HTMLGenerator:
                 const storageKey = getStorageKey();
                 localStorage.removeItem(storageKey);
                 
-                // Remove downloaded class and reset text for all download links
-                const downloadedLinks = document.querySelectorAll('.download-link.downloaded');
-                downloadedLinks.forEach(link => {{
-                    link.classList.remove('downloaded');
-                    link.textContent = 'Download PDF';
+                // Remove accessed class and reset text for all download links
+                const accessedLinks = document.querySelectorAll('.download-link.accessed');
+                accessedLinks.forEach(link => {{
+                    link.classList.remove('accessed');
+                    link.textContent = 'Access PDF';
                 }});
                 
                 // Show feedback
-                alert('Download history cleared successfully!');
+                alert('Access history cleared successfully!');
             }} catch(e) {{
-                console.error('Error clearing download history:', e);
-                alert('Error clearing download history. Please try again.');
+                console.error('Error clearing access history:', e);
+                showError('Error clearing access history: ' + e.message);
             }}
         }}
         
         // Add event listener for download link clicks
         document.addEventListener('click', function(event) {{
-            const downloadLink = event.target.closest('.download-link');
-            if (downloadLink && downloadLink.hasAttribute('data-paper-id')) {{
-                const paperId = downloadLink.getAttribute('data-paper-id');
-                markAsDownloaded(paperId);
+            try {{
+                const downloadLink = event.target.closest('.download-link');
+                if (downloadLink && downloadLink.hasAttribute('data-paper-id')) {{
+                    const paperId = downloadLink.getAttribute('data-paper-id');
+                    markAsAccessed(paperId);
+                }}
+            }} catch(error) {{
+                showError('Error tracking download: ' + error.message);
+                console.error('Download tracking error:', error);
             }}
         }});
     </script>
@@ -795,13 +914,16 @@ class HTMLGenerator:
             if download_link:
                 # Only escape quotes in the URL to prevent breaking the HTML attribute
                 safe_url = download_link.replace('"', '&quot;').replace("'", '&#39;')
-                download_html = f'<a href="{safe_url}" target="_blank" class="download-link" data-paper-id="{idx}">Download PDF</a>'
+                download_html = f'<a href="{safe_url}" target="_blank" class="download-link" data-paper-id="{idx}">Access PDF</a>'
             else:
                 download_html = '<span class="no-link">Not found</span>'
             
             # Format DOI
             if doi:
-                doi_html = f'<span class="doi">{doi}</span>'
+                # Format DOI URL (handle both with and without https://)
+                doi_url = doi if doi.startswith('http') else f'https://doi.org/{doi}'
+                safe_doi_url = doi_url.replace('"', '&quot;').replace("'", '&#39;')
+                doi_html = f'<a href="{safe_doi_url}" target="_blank" class="doi">{doi}</a>'
             else:
                 doi_html = '<span class="no-link">-</span>'
             
@@ -810,6 +932,9 @@ class HTMLGenerator:
                 citations_html = '<span class="no-link">Missing citations</span>'
             else:
                 citations_html = f'<span class="citations">{HTMLGenerator._escape_html(citations_formatted)}</span>'
+            
+            # Format download status checkbox
+            download_status_html = f'<input type="checkbox" class="download-status-checkbox" data-paper-id="{idx}" title="Check if you actually downloaded this paper">'
             
             row = f"""                    <tr>
                         <td><input type="checkbox" id="paper-{idx}"></td>
@@ -821,6 +946,7 @@ class HTMLGenerator:
                         <td>{citations_html}</td>
                         <td>{doi_html}</td>
                         <td>{download_html}</td>
+                        <td>{download_status_html}</td>
                     </tr>"""
             rows.append(row)
         
